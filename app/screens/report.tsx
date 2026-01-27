@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 
 import Upload from '@/components/ui/upload';
-import { useReportForm } from '@/store/reportForm';
+import { useReportForm } from '@/services/reportForm';
 
 export default function ReportScreen() {
   const insets = useSafeAreaInsets();
@@ -92,25 +92,24 @@ export default function ReportScreen() {
           <Text style={styles.sectionTitle}>Leak Type</Text>
           <View style={styles.grid2}>
             {(['Unidentified','Serviceline','Mainline','Others'] as const).map((t) => {
-              const selected = leakType === t;
+              const isSelected = leakType === t;
               return (
-                <TouchableOpacity key={t} style={[styles.choiceBtn, selected && styles.choiceBtnActive]} onPress={() => setLeakType(t)} activeOpacity={0.85}>
-                  <Text style={[styles.choiceLabel, selected && styles.choiceLabelActive]}>{t}</Text>
-                  {selected && <Ionicons name="checkmark-circle" size={16} color="#fff" style={{ marginLeft: 6 }} />}
+                <TouchableOpacity key={t} style={[styles.choiceBtn, isSelected && styles.choiceBtnActive]} onPress={() => setLeakType(t)} activeOpacity={0.85}>
+                  <Text style={[styles.choiceLabel, isSelected && styles.choiceLabelActive]}>{t}</Text>
+                  {isSelected && <Ionicons name="checkmark-circle" size={16} color="#fff" style={{ marginLeft: 6 }} />}
                 </TouchableOpacity>
               );
             })}
           </View>
-
           {/* Location */}
           <Text style={[styles.sectionTitle, { marginTop: 12 }]}>Location</Text>
           <View style={{ flexDirection: 'row', gap: 12 }}>
             {(['Surface','Non-Surface'] as const).map((t) => {
-              const selected = location === t;
+              const isSelected = location === t;
               return (
-                <TouchableOpacity key={t} style={[styles.choiceBtn, { flex: 1 }, selected && styles.choiceBtnActive]} onPress={() => setLocation(t)} activeOpacity={0.85}>
-                  <Text style={[styles.choiceLabel, selected && styles.choiceLabelActive]}>{t}</Text>
-                  {selected && <Ionicons name="checkmark-circle" size={16} color="#fff" style={{ marginLeft: 6 }} />}
+                <TouchableOpacity key={t} style={[styles.choiceBtn, { flex: 1 }, isSelected && styles.choiceBtnActive]} onPress={() => setLocation(t)} activeOpacity={0.85}>
+                  <Text style={[styles.choiceLabel, isSelected && styles.choiceLabelActive]}>{t}</Text>
+                  {isSelected && <Ionicons name="checkmark-circle" size={16} color="#fff" style={{ marginLeft: 6 }} />}
                 </TouchableOpacity>
               );
             })}
@@ -121,7 +120,7 @@ export default function ReportScreen() {
           <View style={styles.inputRow}>
             <Ionicons name="business-outline" size={18} color="#1f3a8a" />
             <TextInput
-              placeholder=""
+              placeholder="Enter name"
               style={styles.input}
               value={contactPerson}
               onChangeText={setContactPerson}
@@ -134,7 +133,7 @@ export default function ReportScreen() {
           <View style={styles.inputRow}>
             <Ionicons name="call-outline" size={18} color="#1f3a8a" />
             <TextInput
-              placeholder=""
+              placeholder="Enter phone number"
               keyboardType="phone-pad"
               style={styles.input}
               value={contactNumber}
@@ -148,7 +147,7 @@ export default function ReportScreen() {
           <View style={styles.inputRow}>
             <Ionicons name="location" size={18} color="#1f3a8a" />
             <TextInput
-              placeholder=""
+              placeholder="Enter landmark"
               style={styles.input}
               value={landmark}
               onChangeText={setLandmark}
@@ -180,6 +179,10 @@ export default function ReportScreen() {
           </View>
           <TouchableOpacity style={styles.reportBtn} activeOpacity={0.9} onPress={submit}>
             <Text style={styles.reportBtnText}>Send Report</Text>
+          </TouchableOpacity>
+          {/* Clear form button */}
+          <TouchableOpacity style={styles.clearBtn} activeOpacity={0.9} onPress={reset}>
+            <Text style={styles.clearBtnText}>Clear Form</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -309,4 +312,15 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
   },
   reportBtnText: { color: '#fff', fontWeight: '700' },
+  clearBtn: {
+    marginTop: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 14,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    backgroundColor: '#fff',
+  },
+  clearBtnText: { color: '#111827', fontWeight: '700' },
 });

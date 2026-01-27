@@ -1,18 +1,45 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, /* ScrollView, */ TouchableOpacity, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import LeafletMap from '@/components/ui/maps';
+import * as Location from 'expo-location';
 
 export default function NearestMetersScreen() {
   const insets = useSafeAreaInsets();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [center, setCenter] = useState<{ lat: number; lng: number }>({ lat: 7.0731, lng: 125.613 });
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') return;
+        const pos = await Location.getCurrentPositionAsync({});
+        setCenter({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+      } catch (e) {
+        // silently ignore on web/simulator or show optional alert
+        console.warn('Location error', e);
+      }
+    })();
+  }, []);
+
+  const recenter = async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') return;
+      const pos = await Location.getCurrentPositionAsync({});
+      setCenter({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+    } catch (e) {
+      Alert.alert('Location unavailable', 'Unable to fetch your current location.');
+    }
+  };
 
   const meters = [
-    { rank: 1, id: 'V24044612J', title: 'DURIAN ST., JUNA MATINA', distance: '55m away', color: '#10b981', account: '12-157330-3', address: 'DURIAN ST., JUNA MATINA', dma: 'DM-10P' },
-    { rank: 2, id: 'V24044957J', title: 'H-110 DBC  BLDG MATINA', distance: '143m away', color: '#f59e0b', account: '11-234567-8', address: 'H-110 DBC  BLDG MATINA', dma: 'DM-10P' },
-    { rank: 3, id: 'V24044350J', title: 'KARPRETAREA BLGO. MATINA', distance: '230m away', color: '#ef4444', account: '10-987654-3', address: 'KARPRETAREA BLGO. MATINA', dma: 'DM-10P' },
+    { rank: 1, id: 'V24044612J', title: 'DURIAN ST., JUNA MATINA', distance: '55m away', color: '#10b981', account: '12-157330-3', address: 'DURIAN ST., JUNA MATINA', dma: 'DM-10P', lat: 7.0735, lng: 125.6135 },
+    { rank: 2, id: 'V24044957J', title: 'H-110 DBC  BLDG MATINA', distance: '143m away', color: '#f59e0b', account: '11-234567-8', address: 'H-110 DBC  BLDG MATINA', dma: 'DM-10P', lat: 7.0722, lng: 125.6141 },
+    { rank: 3, id: 'V24044350J', title: 'KARPRETAREA BLGO. MATINA', distance: '230m away', color: '#ef4444', account: '10-987654-3', address: 'KARPRETAREA BLGO. MATINA', dma: 'DM-10P', lat: 7.074, lng: 125.6124 },
   ];
 
   const selected = meters.find(m => m.id === selectedId) || null;
@@ -32,23 +59,24 @@ export default function NearestMetersScreen() {
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
-        {/* Map placeholder / canvas */}
+      {/* Make screen non-scrollable */}
+      <View style={{ paddingBottom: 24 }}>
+        {/* Map */}
         <View style={[styles.mapCard, selected && { marginBottom: 12 }]}>
           <LeafletMap
-            center={{ lat: 7.0731, lng: 125.613 }}
-            zoom={15}
-            markers={selected ? [{ id: selected.id, position: { lat: 7.0731, lng: 125.613 }, title: selected.id }] : []}
+            center={selected ? { lat: selected.lat, lng: selected.lng } : center}
+            zoom={16}
+            markers={selected ? [{ id: selected.id, position: { lat: selected.lat, lng: selected.lng }, title: selected.title } ] : []}
             style={{ flex: 1, width: '100%' }}
           />
-          {/* Floating tools mock */}
-          {selected && (
-            <View style={styles.fabColumn}>
-              <View style={styles.fab}><Ionicons name="layers-outline" size={18} color="#1f2937" /></View>
-              <View style={styles.fab}><Ionicons name="locate-outline" size={18} color="#1f2937" /></View>
-              <View style={styles.fab}><Ionicons name="refresh-outline" size={18} color="#1f2937" /></View>
-            </View>
-          )}
+          {/* Floating tools: always show re-center */}
+          <View style={styles.fabColumn}>
+            <View style={styles.fab}><Ionicons name="layers-outline" size={18} color="#1f2937" /></View>
+            <TouchableOpacity style={styles.fab} onPress={recenter} activeOpacity={0.8}>
+              <Ionicons name="locate-outline" size={18} color="#1f2937" />
+            </TouchableOpacity>
+            <View style={styles.fab}><Ionicons name="refresh-outline" size={18} color="#1f2937" /></View>
+          </View>
         </View>
 
         {/* If a meter is selected, show details sheet; else show selection list */}
@@ -92,7 +120,16 @@ export default function NearestMetersScreen() {
             <TouchableOpacity
               style={styles.reportBtn}
               activeOpacity={0.85}
-              onPress={() => selected && router.push({ pathname: '/screens/report', params: { id: selected.id, address: selected.address, account: selected.account, dma: selected.dma } })}
+              onPress={() => router.push({
+                pathname: '/screens/report',
+                params: {
+                  id: selected.id,
+                  address: selected.address,
+                  account: selected.account,
+                  dma: selected.dma,
+                  coords: `${selected.lat.toFixed(6)}, ${selected.lng.toFixed(6)}`
+                }
+              })}
             >
               <Ionicons name="create-outline" size={18} color="#fff" style={{ marginRight: 8 }} />
               <Text style={styles.reportBtnText}>Report Meter</Text>
@@ -128,7 +165,7 @@ export default function NearestMetersScreen() {
         )}
 
         <View style={{ height: 12 }} />
-      </ScrollView>
+      </View>
     </View>
   );
 }
