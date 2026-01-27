@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-nati
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import LeafletMap from '@/components/ui/maps';
 
 export default function NearestMetersScreen() {
   const insets = useSafeAreaInsets();
@@ -34,8 +35,12 @@ export default function NearestMetersScreen() {
       <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
         {/* Map placeholder / canvas */}
         <View style={[styles.mapCard, selected && { marginBottom: 12 }]}>
-          <Ionicons name="map-outline" size={28} color="#64748b" />
-          <Text style={{ color: '#64748b', marginTop: 6 }}>Map placeholder</Text>
+          <LeafletMap
+            center={{ lat: 7.0731, lng: 125.613 }}
+            zoom={15}
+            markers={selected ? [{ id: selected.id, position: { lat: 7.0731, lng: 125.613 }, title: selected.id }] : []}
+            style={{ flex: 1, width: '100%' }}
+          />
           {/* Floating tools mock */}
           {selected && (
             <View style={styles.fabColumn}>
@@ -160,6 +165,7 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 6 },
     elevation: 2,
+    overflow: 'hidden',
   },
   fabColumn: {
     position: 'absolute',
