@@ -4,7 +4,6 @@ import React from 'react';
 import { HapticTab } from '@/components/defaultcomponents/haptic-tab';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { IconSymbol } from '@/components/defaultcomponents/icon-symbols';
 import { MaterialIcons } from '@expo/vector-icons';
 
 export default function TabLayout() {

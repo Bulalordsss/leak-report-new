@@ -1,11 +1,12 @@
-import React from 'react';
-import { ScrollView, View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useState } from 'react';
+import { ScrollView, View, Text, TouchableOpacity, StyleSheet, Switch } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
+  const [onlineMaps, setOnlineMaps] = useState(true);
 
   return (
     <View style={styles.page}>
@@ -23,16 +24,29 @@ export default function SettingsScreen() {
           <View style={styles.cardHeaderRow}>
             <View style={styles.detailIcon}><Ionicons name="map-outline" size={18} color="#1f3a8a" /></View>
             <Text style={styles.sheetTitle}>Offline Maps</Text>
-            <View style={styles.pillDanger}><Text style={styles.pillDangerText}>Online Mode</Text></View>
+            <View style={[styles.pillDanger, { marginLeft: 'auto' }]}> 
+              <Text style={styles.pillDangerText}>{onlineMaps ? 'Online Mode' : 'Offline Mode'}</Text>
+            </View>
           </View>
 
           <View style={{ marginTop: 8 }}>
-            <Row label="Status:" value="" />
-            <Row label="Cached Tiles:" value="0" />
-            <Row label="Storage Used:" value="0.0 MB" />
+            <Row label="Status:" value={onlineMaps ? 'Online' : 'Offline'} />
+            <Row label="Cached Tiles:" value={onlineMaps ? '—' : '0'} />
+            <Row label="Storage Used:" value={onlineMaps ? '—' : '0.0 MB'} />
           </View>
 
-          <PrimaryButton title="Download Offline Maps" onPress={() => { /* TODO: implement */ }} />
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 12, justifyContent: 'space-between' }}>
+            <Text style={{ color: '#374151', fontWeight: '600' }}>Use Online Maps</Text>
+            <Switch value={onlineMaps} onValueChange={setOnlineMaps} />
+          </View>
+
+          {!onlineMaps && (
+            <>
+              <PrimaryButton title="Download Offline Maps" onPress={() => { /* TODO: implement */ }} />
+              <View style={{ height: 8 }} />
+              <PrimaryButton title="Clear Cache" onPress={() => { /* TODO: clear cached tiles */ }} />
+            </>
+          )}
         </View>
 
         {/* Offline Meter Search Data Card */}

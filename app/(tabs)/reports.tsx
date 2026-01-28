@@ -69,14 +69,6 @@ export default function NearestMetersScreen() {
             markers={selected ? [{ id: selected.id, position: { lat: selected.lat, lng: selected.lng }, title: selected.title } ] : []}
             style={{ flex: 1, width: '100%' }}
           />
-          {/* Floating tools: always show re-center */}
-          <View style={styles.fabColumn}>
-            <View style={styles.fab}><Ionicons name="layers-outline" size={18} color="#1f2937" /></View>
-            <TouchableOpacity style={styles.fab} onPress={recenter} activeOpacity={0.8}>
-              <Ionicons name="locate-outline" size={18} color="#1f2937" />
-            </TouchableOpacity>
-            <View style={styles.fab}><Ionicons name="refresh-outline" size={18} color="#1f2937" /></View>
-          </View>
         </View>
 
         {/* If a meter is selected, show details sheet; else show selection list */}

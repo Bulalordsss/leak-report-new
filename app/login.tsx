@@ -3,15 +3,26 @@ import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
+import { useAuthStore } from '@/utils/authStore';
 
 export default function LoginPage() {
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
 
-    const onFinish = () => {
-        console.log('Login values', { username, password });
-        // TODO: validate auth, then
-        router.replace('/(tabs)');
+    const { login, isLoading } = useAuthStore();
+
+    const onFinish = async () => {
+        if (!username || !password) {
+            alert('Please enter both username and password');
+            return;
+        }
+        try {
+            console.log('[login] attempting', { username });
+            await login(username, password);
+            router.replace("/(tabs)");
+        } catch (error) {
+            alert("Invalid username or password");
+        }
     };
 
     return (
@@ -52,8 +63,14 @@ export default function LoginPage() {
                         />
                     </View>
 
-                    <TouchableOpacity onPress={onFinish} style={styles.loginButton}>
-                        <Text style={styles.loginButtonText}>LOGIN</Text>
+                    <TouchableOpacity
+                        onPress={onFinish}
+                        style={styles.loginButton}
+                        disabled={isLoading}
+                    >
+                        <Text style={styles.loginButtonText}>
+                            {isLoading ? "LOGGING IN..." : "LOGIN"}
+                        </Text>
                     </TouchableOpacity>
                 </View>
 
