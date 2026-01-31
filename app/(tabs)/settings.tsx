@@ -1,12 +1,72 @@
-import React, { useState } from 'react';
-import { ScrollView, View, Text, TouchableOpacity, StyleSheet, Switch } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { ScrollView, View, Text, TouchableOpacity, StyleSheet, Switch, Alert, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import { fetchAndSaveCustomerData } from '@/hooks/downloadCustomerData';
+import { hasCustomerData, loadCustomerData, clearCustomerData } from '@/utils/allCustomerData';
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const [onlineMaps, setOnlineMaps] = useState(true);
+  const [customerDataStatus, setCustomerDataStatus] = useState<'checking' | 'not_downloaded' | 'downloaded'>('checking');
+  const [customerCount, setCustomerCount] = useState(0);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState({ current: 0, total: 0 });
+
+  useEffect(() => {
+    checkCustomerData();
+  }, []);
+
+  const checkCustomerData = async () => {
+    const exists = await hasCustomerData();
+    if (exists) {
+      const data = await loadCustomerData();
+      setCustomerCount(data.length);
+      setCustomerDataStatus('downloaded');
+    } else {
+      setCustomerDataStatus('not_downloaded');
+    }
+  };
+
+  const handleDownloadClientData = async () => {
+    setDownloading(true);
+    setDownloadProgress({ current: 0, total: 0 });
+
+    const result = await fetchAndSaveCustomerData((current, total) => {
+      setDownloadProgress({ current, total });
+    });
+
+    setDownloading(false);
+
+    if (result.success) {
+      setCustomerCount(result.count);
+      setCustomerDataStatus('downloaded');
+      Alert.alert('Success', `Downloaded ${result.count} customer records.`);
+    } else {
+      Alert.alert('Error', result.error ?? 'Failed to download customer data.');
+    }
+  };
+
+  const handleClearClientData = async () => {
+    Alert.alert(
+      'Clear Client Data',
+      'Are you sure you want to clear all downloaded customer data?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear',
+          style: 'destructive',
+          onPress: async () => {
+            await clearCustomerData();
+            setCustomerDataStatus('not_downloaded');
+            setCustomerCount(0);
+            Alert.alert('Cleared', 'Customer data has been cleared.');
+          },
+        },
+      ]
+    );
+  };
 
   return (
     <View style={styles.page}>
@@ -56,10 +116,46 @@ export default function SettingsScreen() {
             <Text style={styles.sheetTitle}>Offline Meter Search Data</Text>
           </View>
           <View style={{ marginTop: 8 }}>
-            <Row label="Status:" value="Not Downloaded" />
+            <Row
+              label="Status:"
+              value={
+                customerDataStatus === 'checking'
+                  ? 'Checking...'
+                  : customerDataStatus === 'downloaded'
+                  ? 'Downloaded'
+                  : 'Not Downloaded'
+              }
+            />
+            {customerDataStatus === 'downloaded' && (
+              <Row label="Records:" value={customerCount.toLocaleString()} />
+            )}
+            {downloading && downloadProgress.total > 0 && (
+              <Row
+                label="Progress:"
+                value={`${downloadProgress.current.toLocaleString()} / ${downloadProgress.total.toLocaleString()}`}
+              />
+            )}
           </View>
 
-          <PrimaryButton title="Download Client Data" onPress={() => { /* TODO: implement */ }} />
+          {downloading ? (
+            <View style={styles.loadingRow}>
+              <ActivityIndicator size="small" color="#1f3a8a" />
+              <Text style={styles.loadingText}>Downloading...</Text>
+            </View>
+          ) : (
+            <>
+              <PrimaryButton title="Download Client Data" onPress={handleDownloadClientData} />
+              {customerDataStatus === 'downloaded' && (
+                <>
+                  <View style={{ height: 8 }} />
+                  <TouchableOpacity style={styles.clearBtn} activeOpacity={0.85} onPress={handleClearClientData}>
+                    <Ionicons name="trash-outline" size={18} color="#ef4444" style={{ marginRight: 8 }} />
+                    <Text style={styles.clearBtnText}>Clear Client Data</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </>
+          )}
         </View>
 
         {/* General Settings Card */}
@@ -205,4 +301,27 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
   },
   logoutBtnText: { color: '#fff', fontWeight: '700' },
+
+  // Loading and clear button styles
+  loadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 12,
+    paddingVertical: 12,
+  },
+  loadingText: {
+    marginLeft: 8,
+    color: '#1f3a8a',
+    fontWeight: '600',
+  },
+  clearBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fee2e2',
+    borderRadius: 14,
+    paddingVertical: 12,
+  },
+  clearBtnText: { color: '#ef4444', fontWeight: '700' },
 });

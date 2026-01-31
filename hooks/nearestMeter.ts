@@ -1,3 +1,5 @@
+import { Customer } from '@/utils/allCustomerData';
+
 export type LatLng = { lat: number; lng: number };
 
 export type Meter = {
@@ -12,6 +14,8 @@ export type Meter = {
   lat: number;
   lng: number;
 };
+
+const RANK_COLORS = ['#10b981', '#f59e0b', '#ef4444']; // green, yellow, red
 
 function toRad(value: number) {
   return (value * Math.PI) / 180;
@@ -48,5 +52,48 @@ export function getNearestMeters(center: LatLng, meters: Meter[], max = 3): Mete
     ...m,
     rank: index + 1,
     distance: `${m.numericDistance.toFixed(0)}m away`,
+    color: RANK_COLORS[index] || '#6b7280',
+  }));
+}
+
+/**
+ * Find the nearest meters from customer data based on user's location
+ */
+export function getNearestMetersFromCustomers(
+  center: LatLng,
+  customers: Customer[],
+  max = 3
+): Meter[] {
+  // Filter out customers with invalid coordinates
+  const validCustomers = customers.filter(
+    c => c.latitude !== 0 && c.longitude !== 0 && c.meterNumber
+  );
+
+  // Deduplicate by meter number (keep the first occurrence)
+  const uniqueCustomers = validCustomers.filter(
+    (c, index, self) => index === self.findIndex(t => t.meterNumber === c.meterNumber)
+  );
+
+  // Calculate distance for each customer
+  const withDistance = uniqueCustomers.map(c => ({
+    customer: c,
+    numericDistance: distanceInMeters(center, { lat: c.latitude, lng: c.longitude }),
+  }));
+
+  // Sort by distance
+  withDistance.sort((a, b) => a.numericDistance - b.numericDistance);
+
+  // Take top N and convert to Meter format
+  return withDistance.slice(0, max).map((item, index) => ({
+    rank: index + 1,
+    id: item.customer.meterNumber,
+    title: item.customer.address,
+    distance: `${item.numericDistance.toFixed(0)}m away`,
+    color: RANK_COLORS[index] || '#6b7280',
+    account: item.customer.accountNumber,
+    address: item.customer.address,
+    dma: item.customer.dma,
+    lat: item.customer.latitude,
+    lng: item.customer.longitude,
   }));
 }

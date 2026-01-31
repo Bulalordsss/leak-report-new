@@ -1,43 +1,46 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import LeafletMap from '@/components/ui/maps';
 import { getCurrentLocation } from '@/hooks/getLocation';
-import { getNearestMeters, Meter } from '@/hooks/nearestMeter';
+import { getNearestMetersFromCustomers, Meter } from '@/hooks/nearestMeter';
+import { loadCustomerData, Customer } from '@/utils/allCustomerData';
 
 export default function NearestMetersScreen() {
   const insets = useSafeAreaInsets();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [center, setCenter] = useState<{ lat: number; lng: number }>({ lat: 7.0731, lng: 125.613 });
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [meters, setMeters] = useState<Meter[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [dataStatus, setDataStatus] = useState<'loading' | 'loaded' | 'empty'>('loading');
 
-  // Base meters data (without distance / rank)
-  const baseMeters: Omit<Meter, 'rank' | 'distance'>[] = [
-    { id: 'V24044612J', title: 'DURIAN ST., JUNA MATINA', color: '#10b981', account: '12-157330-3', address: 'DURIAN ST., JUNA MATINA', dma: 'DM-10P', lat: 7.0735, lng: 125.6135 },
-    { id: 'V24044957J', title: 'H-110 DBC  BLDG MATINA', color: '#f59e0b', account: '11-234567-8', address: 'H-110 DBC  BLDG MATINA', dma: 'DM-10P', lat: 7.0722, lng: 125.6141 },
-    { id: 'V24044350J', title: 'KARPRETAREA BLGO. MATINA', color: '#ef4444', account: '10-987654-3', address: 'KARPRETAREA BLGO. MATINA', dma: 'DM-10P', lat: 7.074, lng: 125.6124 },
-  ];
-
-  const [meters, setMeters] = useState<Meter[]>(() =>
-    baseMeters.map((m, idx) => ({
-      ...m,
-      rank: idx + 1,
-      distance: '—',
-    }))
-  );
-
+  // Load customer data from SQLite on mount
   useEffect(() => {
     (async () => {
-      const loc = await getCurrentLocation();
-      if (!loc) return;
-      setCenter(loc);
-      setUserLocation(loc);
-      // recompute nearest meters based on current location
-      setMeters(getNearestMeters(loc, meters));
+      setIsLoading(true);
+      try {
+        const data = await loadCustomerData();
+        setCustomers(data);
+        setDataStatus(data.length > 0 ? 'loaded' : 'empty');
+        
+        // Get current location and compute nearest meters
+        const loc = await getCurrentLocation();
+        if (loc && data.length > 0) {
+          setCenter(loc);
+          setUserLocation(loc);
+          setMeters(getNearestMetersFromCustomers(loc, data, 3));
+        }
+      } catch (error) {
+        console.error('Error loading customer data:', error);
+        setDataStatus('empty');
+      } finally {
+        setIsLoading(false);
+      }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const recenter = async () => {
@@ -48,7 +51,9 @@ export default function NearestMetersScreen() {
     }
     setCenter(loc);
     setUserLocation(loc);
-    setMeters(getNearestMeters(loc, meters));
+    if (customers.length > 0) {
+      setMeters(getNearestMetersFromCustomers(loc, customers, 3));
+    }
   };
 
   const selected = meters.find(m => m.id === selectedId) || null;
@@ -142,27 +147,48 @@ export default function NearestMetersScreen() {
             <Text style={styles.sheetTitle}>Select a nearest meter</Text>
             <Text style={styles.sheetSubtitle}>Up to 3 closest meters to your GPS. Choose from the list below.</Text>
 
-            <View style={styles.inlineStatus}>
-              <Ionicons name="checkmark-circle" size={18} color="#10b981" />
-              <Text style={styles.statusText}>Using offline customer data</Text>
-            </View>
+            {isLoading ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color="#1f3a8a" />
+                <Text style={styles.loadingText}>Loading customer data...</Text>
+              </View>
+            ) : dataStatus === 'empty' ? (
+              <View style={styles.emptyContainer}>
+                <Ionicons name="alert-circle-outline" size={48} color="#f59e0b" />
+                <Text style={styles.emptyTitle}>No Customer Data</Text>
+                <Text style={styles.emptyText}>Please download customer data from the Settings tab first.</Text>
+              </View>
+            ) : meters.length === 0 ? (
+              <View style={styles.emptyContainer}>
+                <Ionicons name="location-outline" size={48} color="#6b7280" />
+                <Text style={styles.emptyTitle}>No Meters Found</Text>
+                <Text style={styles.emptyText}>Unable to find nearby meters. Please check your location.</Text>
+              </View>
+            ) : (
+              <>
+                <View style={styles.inlineStatus}>
+                  <Ionicons name="checkmark-circle" size={18} color="#10b981" />
+                  <Text style={styles.statusText}>Using offline customer data ({customers.length.toLocaleString()} records)</Text>
+                </View>
 
-            {meters.map((m) => (
-              <TouchableOpacity key={m.id} style={styles.itemCard} activeOpacity={0.8} onPress={() => setSelectedId(m.id)}>
-                <View style={[styles.rankBadge, { backgroundColor: m.color }]}> 
-                  <Text style={styles.rankText}>{m.rank}</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.itemId}>{m.id}</Text>
-                  <Text style={styles.itemTitle}>{m.title}</Text>
-                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    <Ionicons name="pin" size={14} color="#ef4444" style={{ marginRight: 4 }} />
-                    <Text style={styles.itemDistance}>{m.distance}</Text>
-                  </View>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
-              </TouchableOpacity>
-            ))}
+                {meters.map((m, index) => (
+                  <TouchableOpacity key={`${m.id}-${index}`} style={styles.itemCard} activeOpacity={0.8} onPress={() => setSelectedId(m.id)}>
+                    <View style={[styles.rankBadge, { backgroundColor: m.color }]}> 
+                      <Text style={styles.rankText}>{m.rank}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.itemId}>{m.id}</Text>
+                      <Text style={styles.itemTitle}>{m.title}</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <Ionicons name="pin" size={14} color="#ef4444" style={{ marginRight: 4 }} />
+                        <Text style={styles.itemDistance}>{m.distance}</Text>
+                      </View>
+                    </View>
+                    <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
+                  </TouchableOpacity>
+                ))}
+              </>
+            )}
           </View>
         )}
 
@@ -297,4 +323,32 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
   },
   reportBtnText: { color: '#fff', fontWeight: '700' },
+
+  loadingContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 32,
+  },
+  loadingText: {
+    marginTop: 12,
+    color: '#6b7280',
+    fontSize: 14,
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 24,
+  },
+  emptyTitle: {
+    marginTop: 12,
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  emptyText: {
+    marginTop: 4,
+    color: '#6b7280',
+    fontSize: 14,
+    textAlign: 'center',
+  },
 });
