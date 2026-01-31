@@ -1,46 +1,55 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, /* ScrollView, */ TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import LeafletMap from '@/components/ui/maps';
-import * as Location from 'expo-location';
+import { getCurrentLocation } from '@/hooks/getLocation';
+import { getNearestMeters, Meter } from '@/hooks/nearestMeter';
 
 export default function NearestMetersScreen() {
   const insets = useSafeAreaInsets();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [center, setCenter] = useState<{ lat: number; lng: number }>({ lat: 7.0731, lng: 125.613 });
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+
+  // Base meters data (without distance / rank)
+  const baseMeters: Omit<Meter, 'rank' | 'distance'>[] = [
+    { id: 'V24044612J', title: 'DURIAN ST., JUNA MATINA', color: '#10b981', account: '12-157330-3', address: 'DURIAN ST., JUNA MATINA', dma: 'DM-10P', lat: 7.0735, lng: 125.6135 },
+    { id: 'V24044957J', title: 'H-110 DBC  BLDG MATINA', color: '#f59e0b', account: '11-234567-8', address: 'H-110 DBC  BLDG MATINA', dma: 'DM-10P', lat: 7.0722, lng: 125.6141 },
+    { id: 'V24044350J', title: 'KARPRETAREA BLGO. MATINA', color: '#ef4444', account: '10-987654-3', address: 'KARPRETAREA BLGO. MATINA', dma: 'DM-10P', lat: 7.074, lng: 125.6124 },
+  ];
+
+  const [meters, setMeters] = useState<Meter[]>(() =>
+    baseMeters.map((m, idx) => ({
+      ...m,
+      rank: idx + 1,
+      distance: '—',
+    }))
+  );
 
   useEffect(() => {
     (async () => {
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') return;
-        const pos = await Location.getCurrentPositionAsync({});
-        setCenter({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-      } catch (e) {
-        // silently ignore on web/simulator or show optional alert
-        console.warn('Location error', e);
-      }
+      const loc = await getCurrentLocation();
+      if (!loc) return;
+      setCenter(loc);
+      setUserLocation(loc);
+      // recompute nearest meters based on current location
+      setMeters(getNearestMeters(loc, meters));
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const recenter = async () => {
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') return;
-      const pos = await Location.getCurrentPositionAsync({});
-      setCenter({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-    } catch (e) {
+    const loc = await getCurrentLocation();
+    if (!loc) {
       Alert.alert('Location unavailable', 'Unable to fetch your current location.');
+      return;
     }
+    setCenter(loc);
+    setUserLocation(loc);
+    setMeters(getNearestMeters(loc, meters));
   };
-
-  const meters = [
-    { rank: 1, id: 'V24044612J', title: 'DURIAN ST., JUNA MATINA', distance: '55m away', color: '#10b981', account: '12-157330-3', address: 'DURIAN ST., JUNA MATINA', dma: 'DM-10P', lat: 7.0735, lng: 125.6135 },
-    { rank: 2, id: 'V24044957J', title: 'H-110 DBC  BLDG MATINA', distance: '143m away', color: '#f59e0b', account: '11-234567-8', address: 'H-110 DBC  BLDG MATINA', dma: 'DM-10P', lat: 7.0722, lng: 125.6141 },
-    { rank: 3, id: 'V24044350J', title: 'KARPRETAREA BLGO. MATINA', distance: '230m away', color: '#ef4444', account: '10-987654-3', address: 'KARPRETAREA BLGO. MATINA', dma: 'DM-10P', lat: 7.074, lng: 125.6124 },
-  ];
 
   const selected = meters.find(m => m.id === selectedId) || null;
 
@@ -67,6 +76,7 @@ export default function NearestMetersScreen() {
             center={selected ? { lat: selected.lat, lng: selected.lng } : center}
             zoom={16}
             markers={selected ? [{ id: selected.id, position: { lat: selected.lat, lng: selected.lng }, title: selected.title } ] : []}
+            userLocation={userLocation ?? undefined}
             style={{ flex: 1, width: '100%' }}
           />
         </View>
