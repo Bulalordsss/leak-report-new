@@ -7,6 +7,10 @@ export type Customer = {
   dma: string;
   latitude: number;
   longitude: number;
+  name?: string;
+  wss?: string;
+  connectionClass?: string;
+  status?: string;
 };
 
 const DB_NAME = 'customerdata.db';
@@ -22,6 +26,34 @@ async function initDatabase(): Promise<SQLite.SQLiteDatabase> {
   // Open the database
   const db = await SQLite.openDatabaseAsync(DB_NAME);
   
+  // Check if table exists and has the new columns
+  console.log('[CustomerDB] Checking table schema...');
+  try {
+    const tableInfo = await db.getAllAsync<{ name: string }>(
+      "PRAGMA table_info(customers)"
+    );
+    const columnNames = tableInfo.map(col => col.name);
+    
+    // Check if new columns exist
+    const hasNewColumns = columnNames.includes('name') && 
+                          columnNames.includes('wss') && 
+                          columnNames.includes('connectionClass') && 
+                          columnNames.includes('status');
+    
+    if (tableInfo.length > 0 && !hasNewColumns) {
+      // Table exists but with old schema - drop and recreate
+      console.log('[CustomerDB] Old schema detected, recreating table...');
+      await db.execAsync(`
+        DROP TABLE IF EXISTS customers;
+        DROP INDEX IF EXISTS idx_meter;
+        DROP INDEX IF EXISTS idx_account;
+      `);
+    }
+  } catch (e) {
+    // Table might not exist yet, which is fine
+    console.log('[CustomerDB] Table check result:', e);
+  }
+  
   // Create tables - use a single exec call to minimize lock time
   console.log('[CustomerDB] Creating tables...');
   await db.execAsync(`
@@ -32,7 +64,11 @@ async function initDatabase(): Promise<SQLite.SQLiteDatabase> {
       address TEXT,
       dma TEXT,
       latitude REAL,
-      longitude REAL
+      longitude REAL,
+      name TEXT,
+      wss TEXT,
+      connectionClass TEXT,
+      status TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_meter ON customers(meterNumber);
     CREATE INDEX IF NOT EXISTS idx_account ON customers(accountNumber);
@@ -95,7 +131,7 @@ async function _saveBatchInternal(db: SQLite.SQLiteDatabase, customers: Customer
   
   // Use a single transaction with bulk VALUES for much faster inserts
   // SQLite supports up to ~500 variables per statement, so we batch accordingly
-  // 6 columns per row = max ~80 rows per statement to be safe
+  // 10 columns per row = max ~50 rows per statement to be safe
   const ROWS_PER_STATEMENT = 50;
   
   await db.withTransactionAsync(async () => {
@@ -103,15 +139,26 @@ async function _saveBatchInternal(db: SQLite.SQLiteDatabase, customers: Customer
       const batch = customers.slice(i, i + ROWS_PER_STATEMENT);
       
       // Build a bulk INSERT statement with multiple VALUES
-      const placeholders = batch.map(() => '(?, ?, ?, ?, ?, ?)').join(', ');
+      const placeholders = batch.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
       const values: (string | number)[] = [];
       
       for (const c of batch) {
-        values.push(c.meterNumber, c.accountNumber, c.address, c.dma, c.latitude, c.longitude);
+        values.push(
+          c.meterNumber,
+          c.accountNumber,
+          c.address,
+          c.dma,
+          c.latitude,
+          c.longitude,
+          c.name || '',
+          c.wss || '',
+          c.connectionClass || '',
+          c.status || ''
+        );
       }
       
       await db.runAsync(
-        `INSERT INTO customers (meterNumber, accountNumber, address, dma, latitude, longitude) VALUES ${placeholders}`,
+        `INSERT INTO customers (meterNumber, accountNumber, address, dma, latitude, longitude, name, wss, connectionClass, status) VALUES ${placeholders}`,
         values
       );
     }
@@ -126,6 +173,78 @@ async function _saveBatchInternal(db: SQLite.SQLiteDatabase, customers: Customer
 export async function saveBatchCustomerData(customers: Customer[], append: boolean = true): Promise<void> {
   const db = await getDatabase();
   await _saveBatchInternal(db, customers);
+}
+
+/**
+ * Stream customer data from an async generator and save to SQLite simultaneously.
+ * This allows fetching and saving to happen in parallel for better performance.
+ * @param dataGenerator - Async generator that yields batches of customers
+ * @param onProgress - Optional callback for progress updates
+ * @returns Total number of customers saved
+ */
+export async function streamAndSaveCustomerData(
+  dataGenerator: AsyncGenerator<Customer[], void, unknown>,
+  onProgress?: (saved: number, total: number) => void
+): Promise<number> {
+  const db = await getDatabase();
+  let totalSaved = 0;
+  let estimatedTotal = 0;
+  
+  console.log('[CustomerDB] Starting stream and save...');
+  
+  // Clear existing data first
+  await clearForBatchImport();
+  
+  for await (const batch of dataGenerator) {
+    if (batch.length === 0) continue;
+    
+    // Save this batch to SQLite
+    await _saveBatchInternal(db, batch);
+    totalSaved += batch.length;
+    
+    // Update progress
+    onProgress?.(totalSaved, estimatedTotal);
+    console.log(`[CustomerDB] Saved batch of ${batch.length}. Total: ${totalSaved}`);
+  }
+  
+  console.log(`[CustomerDB] Stream complete. Total saved: ${totalSaved}`);
+  return totalSaved;
+}
+
+/**
+ * Stream customer data with known total count for accurate progress reporting.
+ * @param dataGenerator - Async generator that yields batches of customers  
+ * @param totalCount - Known total count for progress calculation
+ * @param onProgress - Optional callback for progress updates
+ * @returns Total number of customers saved
+ */
+export async function streamAndSaveCustomerDataWithTotal(
+  dataGenerator: AsyncGenerator<Customer[], void, unknown>,
+  totalCount: number,
+  onProgress?: (saved: number, total: number) => void
+): Promise<number> {
+  const db = await getDatabase();
+  let totalSaved = 0;
+  
+  console.log(`[CustomerDB] Starting stream and save. Expected total: ${totalCount}`);
+  
+  // Clear existing data first
+  await clearForBatchImport();
+  
+  for await (const batch of dataGenerator) {
+    if (batch.length === 0) continue;
+    
+    // Save this batch to SQLite
+    await _saveBatchInternal(db, batch);
+    totalSaved += batch.length;
+    
+    // Update progress with known total
+    onProgress?.(totalSaved, totalCount);
+    console.log(`[CustomerDB] Saved batch of ${batch.length}. Total: ${totalSaved}/${totalCount}`);
+  }
+  
+  console.log(`[CustomerDB] Stream complete. Total saved: ${totalSaved}`);
+  return totalSaved;
 }
 
 /** Prepare for batch import by clearing existing data */
@@ -164,7 +283,7 @@ export async function clearForBatchImport(): Promise<void> {
 export async function loadCustomerData(): Promise<Customer[]> {
   try {
     const db = await getDatabase();
-    const result = await db.getAllAsync<Customer>('SELECT meterNumber, accountNumber, address, dma, latitude, longitude FROM customers');
+    const result = await db.getAllAsync<Customer>('SELECT meterNumber, accountNumber, address, dma, latitude, longitude, name, wss, connectionClass, status FROM customers');
     return result;
   } catch {
     return [];
@@ -205,11 +324,11 @@ export async function searchCustomers(query: string, limit = 50): Promise<Custom
     const db = await getDatabase();
     const searchTerm = `%${query}%`;
     const result = await db.getAllAsync<Customer>(
-      `SELECT meterNumber, accountNumber, address, dma, latitude, longitude 
+      `SELECT meterNumber, accountNumber, address, dma, latitude, longitude, name, wss, connectionClass, status 
        FROM customers 
-       WHERE meterNumber LIKE ? OR accountNumber LIKE ? OR address LIKE ?
+       WHERE meterNumber LIKE ? OR accountNumber LIKE ? OR address LIKE ? OR name LIKE ?
        LIMIT ?`,
-      [searchTerm, searchTerm, searchTerm, limit]
+      [searchTerm, searchTerm, searchTerm, searchTerm, limit]
     );
     return result;
   } catch {

@@ -1,6 +1,12 @@
-import { File, Paths, Directory } from 'expo-file-system';
-import * as SQLite from 'expo-sqlite';
-import { saveBatchCustomerData, loadCustomerData, Customer, clearForBatchImport, initializeDatabase } from '@/utils/allCustomerData';
+import { useState, useCallback } from 'react';
+import { fetchCustomerPage, CustomerApiItem } from '@/services/customerData';
+import { 
+  Customer, 
+  clearForBatchImport, 
+  saveBatchCustomerData, 
+  initializeDatabase,
+  getCustomerCount
+} from '@/utils/allCustomerData';
 
 export type FetchCustomerDataResult = {
   success: boolean;
@@ -8,280 +14,144 @@ export type FetchCustomerDataResult = {
   error?: string;
 };
 
-const REMOTE_DB_URL = 'https://www.davao-water.gov.ph/dcwdApps/mobileApps/mobilegis/offlinedb/gis.s3db';
-const DOWNLOADED_DB_NAME = 'gis_remote.db';
+export type DownloadProgress = {
+  isDownloading: boolean;
+  fetched: number;
+  saved: number;
+  total: number;
+  phase: 'idle' | 'initializing' | 'fetching' | 'saving' | 'complete' | 'error';
+  error?: string;
+};
 
 /**
- * Download the remote SQLite database and extract customer data from it.
+ * Convert API customer item to local Customer format
+ */
+function mapApiCustomerToLocal(apiCustomer: CustomerApiItem): Customer {
+  return {
+    meterNumber: apiCustomer.meterNumber || '',
+    accountNumber: apiCustomer.accountNumber || '',
+    address: apiCustomer.address || '',
+    dma: apiCustomer.dma || '',
+    latitude: apiCustomer.latitude || 0,
+    longitude: apiCustomer.longitude || 0,
+    name: apiCustomer.name || '',
+    wss: apiCustomer.wss || '',
+    connectionClass: apiCustomer.connectionClass || '',
+    status: apiCustomer.status || '',
+  };
+}
+
+// Number of concurrent requests for parallel downloading
+const CONCURRENT_REQUESTS = 5;
+const PAGE_SIZE = 2000;
+
+/**
+ * Fetch and save customer data from the API endpoint.
+ * Downloads data in parallel for faster performance.
  */
 export async function fetchAndSaveCustomerData(
   onProgress?: (current: number, total: number) => void
 ): Promise<FetchCustomerDataResult> {
-  let remoteDb: SQLite.SQLiteDatabase | null = null;
-  let targetFile: File | null = null;
-  
   try {
-    // Pre-initialize the local database to ensure it's ready
-    console.log('Pre-initializing local database...');
+    // Pre-initialize the local database
+    console.log('[CustomerData] Pre-initializing local database...');
     await initializeDatabase();
-    console.log('Local database ready.');
-    
-    console.log('Downloading remote database...');
+    console.log('[CustomerData] Local database ready.');
+
     onProgress?.(0, 100);
 
-    // expo-sqlite stores databases in documentDirectory/SQLite/
-    // We need to download the file there for it to be opened properly
-    const sqliteDir = new Directory(Paths.document, 'SQLite');
-    
-    // Create SQLite directory if it doesn't exist
-    if (!sqliteDir.exists) {
-      console.log('Creating SQLite directory...');
-      await sqliteDir.create();
-    }
-    
-    targetFile = new File(sqliteDir, DOWNLOADED_DB_NAME);
-    console.log('Target path:', targetFile.uri);
-    
-    // Delete existing file if it exists
-    if (targetFile.exists) {
-      console.log('Deleting existing file...');
-      await targetFile.delete();
-    }
-    
-    // Download directly to the SQLite directory
-    console.log('Downloading from:', REMOTE_DB_URL);
-    await File.downloadFileAsync(REMOTE_DB_URL, targetFile);
+    // First, get the total count from the first page
+    console.log('[CustomerData] Fetching first page to get total count...');
+    const firstPage = await fetchCustomerPage({ pageIndex: 1, pageSize: PAGE_SIZE });
+    // Use 'count' field as totalCount seems to always be 0
+    const totalCount = firstPage.data.count || firstPage.data.totalCount;
+    console.log(`[CustomerData] Total customers to download: ${totalCount}`);
 
-    // Check if file exists and has content
-    if (!targetFile.exists) {
-      throw new Error('Failed to download database file.');
-    }
-    
-    console.log('File downloaded. Size:', targetFile.size, 'bytes');
-    
-    if (targetFile.size < 1000) {
-      throw new Error(`Downloaded file is too small (${targetFile.size} bytes). The database may be empty or the download failed.`);
-    }
-
-    console.log('Database downloaded successfully. Opening database...');
-    onProgress?.(30, 100);
-
-    // Open the downloaded database using expo-sqlite
-    remoteDb = await SQLite.openDatabaseAsync(DOWNLOADED_DB_NAME);
-
-    // Query all objects in the database (tables, views, etc.)
-    const allObjects = await remoteDb.getAllAsync<{ type: string; name: string; tbl_name: string }>(
-      "SELECT type, name, tbl_name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'"
-    );
-    console.log('All objects in database:', JSON.stringify(allObjects, null, 2));
-
-    // Get tables specifically
-    const tables = await remoteDb.getAllAsync<{ name: string }>(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
-    );
-    console.log('Tables in downloaded database:', tables.map(t => t.name));
-
-    // If no tables found, check if it's an encrypted database or different format
-    if (tables.length === 0) {
-      // Try to get database info
-      const pragmaInfo = await remoteDb.getAllAsync<Record<string, any>>('PRAGMA database_list');
-      console.log('Database list:', pragmaInfo);
-      
-      // Try integrity check
-      try {
-        const integrityCheck = await remoteDb.getAllAsync<{ integrity_check: string }>('PRAGMA integrity_check');
-        console.log('Integrity check:', integrityCheck);
-      } catch (e) {
-        console.log('Integrity check failed:', e);
-      }
-    }
-
-    onProgress?.(40, 100);
-
-    // Try to find and extract meter/customer data
-    // Adjust the table name and column names based on actual database schema
-    let customers: Customer[] = [];
-
-    // Try common table names
-    const possibleTables = ['tblmeter', 'meters', 'customer', 'customers', 'tblcustomer', 'accounts'];
-    let foundTable = '';
-
-    for (const tableName of possibleTables) {
-      const tableExists = tables.some(t => t.name.toLowerCase() === tableName.toLowerCase());
-      if (tableExists) {
-        foundTable = tables.find(t => t.name.toLowerCase() === tableName.toLowerCase())?.name || '';
-        break;
-      }
-    }
-
-    if (!foundTable) {
-      // If no common table found, try to find any table with relevant columns
-      console.log('No common table found, checking all tables for meter data...');
-      for (const table of tables) {
-        try {
-          const columns = await remoteDb.getAllAsync<{ name: string }>(
-            `PRAGMA table_info(${table.name})`
-          );
-          const columnNames = columns.map(c => c.name.toLowerCase());
-          
-          // Check if table has meter-related columns
-          if (columnNames.some(col => col.includes('meter') || col.includes('account') || col.includes('latitude'))) {
-            foundTable = table.name;
-            console.log(`Found potential table: ${foundTable}`);
-            break;
-          }
-        } catch (e) {
-          continue;
-        }
-      }
-    }
-
-    if (foundTable) {
-      console.log(`Extracting data from table: ${foundTable}`);
-      
-      // Get column info for the table
-      const columns = await remoteDb.getAllAsync<{ name: string; type: string }>(
-        `PRAGMA table_info(${foundTable})`
-      );
-      console.log('Columns:', columns.map(c => c.name));
-
-      onProgress?.(50, 100);
-
-      // Get total count first
-      const countResult = await remoteDb.getFirstAsync<{ count: number }>(
-        `SELECT COUNT(*) as count FROM ${foundTable}`
-      );
-      const totalCount = countResult?.count ?? 0;
-      console.log(`Total records in table: ${totalCount}`);
-
-      // Read ALL data from remote database first, then close it before writing to local DB
-      // This avoids "database is locked" issues from having two DBs open simultaneously
-      console.log('Reading all data from remote database...');
-      
-      const BATCH_SIZE = 10000;
-      let offset = 0;
-      const allBatches: Customer[][] = [];
-      
-      while (offset < totalCount) {
-        console.log(`Reading batch: ${offset} - ${offset + BATCH_SIZE} of ${totalCount}`);
-        
-        // Only select the columns we need to reduce memory usage
-        const rawData = await remoteDb.getAllAsync<Record<string, any>>(
-          `SELECT MeterNumbe, accountnumber, Address, dma, Zone, Latitude, Longitude 
-           FROM ${foundTable} LIMIT ${BATCH_SIZE} OFFSET ${offset}`
-        );
-
-        // Map the data to our Customer format
-        const batchCustomers: Customer[] = rawData
-          .map(row => {
-            const meterNumber = row.MeterNumbe || '';
-            const accountNumber = row.accountnumber || '';
-            const address = row.Address || '';
-            const dma = row.dma || row.Zone || '';
-            const latitude = parseFloat(row.Latitude || 0) || 0;
-            const longitude = parseFloat(row.Longitude || 0) || 0;
-
-            return {
-              meterNumber: String(meterNumber).trim(),
-              accountNumber: String(accountNumber).trim(),
-              address: String(address).trim(),
-              dma: String(dma).trim(),
-              latitude,
-              longitude,
-            };
-          })
-          .filter(c => c.meterNumber && c.meterNumber.trim() !== '');
-
-        if (batchCustomers.length > 0) {
-          allBatches.push(batchCustomers);
-        }
-        
-        offset += BATCH_SIZE;
-        
-        // Update progress (50-70% range for reading)
-        const readProgress = 50 + Math.floor((offset / totalCount) * 20);
-        onProgress?.(Math.min(readProgress, 70), 100);
-      }
-
-      console.log(`Read ${allBatches.length} batches from remote database`);
-      
-      // IMPORTANT: Close the remote database BEFORE opening local database
-      console.log('Closing remote database...');
-      await remoteDb.closeAsync();
-      remoteDb = null;
-      
-      onProgress?.(75, 100);
-      
-      // Now write to local database
-      console.log('Clearing local database...');
-      await clearForBatchImport();
-      
-      let totalSaved = 0;
-      for (let i = 0; i < allBatches.length; i++) {
-        const batch = allBatches[i];
-        await saveBatchCustomerData(batch, true);
-        totalSaved += batch.length;
-        console.log(`Saved batch ${i + 1}/${allBatches.length}. Total: ${totalSaved}`);
-        
-        // Update progress (75-95% range for saving)
-        const saveProgress = 75 + Math.floor(((i + 1) / allBatches.length) * 20);
-        onProgress?.(Math.min(saveProgress, 95), 100);
-      }
-
-      console.log(`Total valid customers saved: ${totalSaved}`);
-      customers = [];
-      (customers as any).savedCount = totalSaved;
-    }
-
-    onProgress?.(95, 100);
-
-    // Close the downloaded database if not already closed
-    if (remoteDb) {
-      console.log('Closing remote database (cleanup)...');
-      await remoteDb.closeAsync();
-      remoteDb = null;
-    }
-
-    // Delete the downloaded database file to save space
-    try {
-      if (targetFile && targetFile.exists) {
-        await targetFile.delete();
-      }
-    } catch (e) {
-      console.log('Could not delete downloaded db file:', e);
-    }
-
-    // Get the count from our tracking (data was saved in batches)
-    const savedCount = (customers as any).savedCount || 0;
-
-    if (savedCount === 0) {
+    if (totalCount === 0) {
       return {
         success: false,
         count: 0,
-        error: 'No customer data found in the downloaded database.',
+        error: 'No customer data available from the server.',
       };
     }
 
-    onProgress?.(100, 100);
-    console.log(`Customer data import complete! Total records: ${savedCount}`);
+    onProgress?.(5, 100);
 
-    return { success: true, count: savedCount };
-  } catch (error: any) {
-    console.error('Failed to fetch customer data:', error);
+    // Clear existing data before import
+    console.log('[CustomerData] Clearing existing data...');
+    await clearForBatchImport();
+
+    onProgress?.(10, 100);
+
+    // Save first page immediately
+    let totalSaved = 0;
+    if (firstPage.data.data.length > 0) {
+      const customers = firstPage.data.data.map(mapApiCustomerToLocal);
+      await saveBatchCustomerData(customers, true);
+      totalSaved += customers.length;
+      console.log(`[CustomerData] Saved first batch: ${totalSaved}/${totalCount}`);
+    }
+
+    // Calculate remaining pages
+    const totalPages = Math.ceil(totalCount / PAGE_SIZE);
     
-    // Cleanup on error
-    if (remoteDb) {
-      try {
-        await remoteDb.closeAsync();
-      } catch (e) {
-        // Ignore cleanup errors
+    if (totalPages > 1) {
+      // Create array of remaining page indices (2 to totalPages)
+      const remainingPages = Array.from({ length: totalPages - 1 }, (_, i) => i + 2);
+      
+      console.log(`[CustomerData] Downloading ${remainingPages.length} remaining pages with ${CONCURRENT_REQUESTS} concurrent requests...`);
+      
+      // Process pages in parallel batches
+      for (let i = 0; i < remainingPages.length; i += CONCURRENT_REQUESTS) {
+        const batch = remainingPages.slice(i, i + CONCURRENT_REQUESTS);
+        
+        console.log(`[CustomerData] Fetching pages ${batch.join(', ')}...`);
+        
+        // Fetch all pages in this batch concurrently
+        const pagePromises = batch.map(pageIndex => 
+          fetchCustomerPage({ pageIndex, pageSize: PAGE_SIZE })
+            .then(page => ({ pageIndex, page, error: null }))
+            .catch(error => ({ pageIndex, page: null, error }))
+        );
+        
+        const results = await Promise.all(pagePromises);
+        
+        // Save results in order
+        for (const result of results) {
+          if (result.error) {
+            console.error(`[CustomerData] Error fetching page ${result.pageIndex}:`, result.error?.message);
+            continue;
+          }
+          
+          if (result.page && result.page.data.data.length > 0) {
+            const customers = result.page.data.data.map(mapApiCustomerToLocal);
+            await saveBatchCustomerData(customers, true);
+            totalSaved += customers.length;
+          }
+        }
+        
+        console.log(`[CustomerData] Saved batch. Total: ${totalSaved}/${totalCount}`);
+        
+        // Update progress (10-95% range for fetching and saving)
+        const progress = 10 + Math.floor((totalSaved / totalCount) * 85);
+        onProgress?.(Math.min(progress, 95), 100);
       }
     }
-    
+
+    onProgress?.(100, 100);
+    console.log(`[CustomerData] Download complete! Total records: ${totalSaved}`);
+
+    return { 
+      success: true, 
+      count: totalSaved 
+    };
+
+  } catch (error: any) {
+    console.error('[CustomerData] Failed to fetch customer data:', error);
     return {
       success: false,
       count: 0,
-      error: error?.message ?? 'Unknown error',
+      error: error?.message ?? 'Unknown error occurred while fetching customer data.',
     };
   }
 }
@@ -290,9 +160,183 @@ export async function fetchAndSaveCustomerData(
  * Get the current download status
  */
 export async function getCustomerDataStatus(): Promise<{ downloaded: boolean; count: number }> {
-  const data = await loadCustomerData();
+  const count = await getCustomerCount();
   return {
-    downloaded: data.length > 0,
-    count: data.length,
+    downloaded: count > 0,
+    count,
+  };
+}
+
+/**
+ * React hook for downloading customer data with progress tracking (parallel download)
+ */
+export function useDownloadCustomerData() {
+  const [progress, setProgress] = useState<DownloadProgress>({
+    isDownloading: false,
+    fetched: 0,
+    saved: 0,
+    total: 0,
+    phase: 'idle',
+  });
+
+  const downloadCustomerData = useCallback(async (): Promise<FetchCustomerDataResult> => {
+    setProgress({
+      isDownloading: true,
+      fetched: 0,
+      saved: 0,
+      total: 0,
+      phase: 'initializing',
+    });
+
+    try {
+      // Initialize database
+      await initializeDatabase();
+
+      setProgress(prev => ({ ...prev, phase: 'fetching' }));
+
+      // Get total count first
+      const firstPage = await fetchCustomerPage({ pageIndex: 1, pageSize: PAGE_SIZE });
+      // Use 'count' field as totalCount seems to always be 0
+      const totalCount = firstPage.data.count || firstPage.data.totalCount;
+
+      if (totalCount === 0) {
+        setProgress({
+          isDownloading: false,
+          fetched: 0,
+          saved: 0,
+          total: 0,
+          phase: 'error',
+          error: 'No customer data available from the server.',
+        });
+        return { success: false, count: 0, error: 'No customer data available.' };
+      }
+
+      setProgress(prev => ({ ...prev, total: totalCount }));
+
+      // Clear existing data
+      await clearForBatchImport();
+
+      // Save first page
+      let totalSaved = 0;
+      let totalFetched = 0;
+
+      if (firstPage.data.data.length > 0) {
+        const customers = firstPage.data.data.map(mapApiCustomerToLocal);
+        totalFetched += firstPage.data.data.length;
+        
+        setProgress(prev => ({ 
+          ...prev, 
+          fetched: totalFetched,
+          phase: 'saving' 
+        }));
+
+        await saveBatchCustomerData(customers, true);
+        totalSaved += customers.length;
+
+        setProgress(prev => ({ 
+          ...prev, 
+          saved: totalSaved,
+          phase: 'fetching'
+        }));
+      }
+
+      // Calculate remaining pages
+      const totalPages = Math.ceil(totalCount / PAGE_SIZE);
+      
+      if (totalPages > 1) {
+        // Create array of remaining page indices
+        const remainingPages = Array.from({ length: totalPages - 1 }, (_, i) => i + 2);
+        
+        // Process pages in parallel batches
+        for (let i = 0; i < remainingPages.length; i += CONCURRENT_REQUESTS) {
+          const batch = remainingPages.slice(i, i + CONCURRENT_REQUESTS);
+          
+          // Fetch all pages in this batch concurrently
+          const pagePromises = batch.map(pageIndex => 
+            fetchCustomerPage({ pageIndex, pageSize: PAGE_SIZE })
+              .then(page => ({ pageIndex, page, error: null }))
+              .catch(error => ({ pageIndex, page: null, error }))
+          );
+          
+          const results = await Promise.all(pagePromises);
+          
+          // Process results
+          for (const result of results) {
+            if (result.page && result.page.data.data.length > 0) {
+              totalFetched += result.page.data.data.length;
+            }
+          }
+          
+          setProgress(prev => ({ 
+            ...prev, 
+            fetched: totalFetched,
+            phase: 'saving'
+          }));
+          
+          // Save results
+          for (const result of results) {
+            if (result.error) {
+              console.error(`Error fetching page ${result.pageIndex}:`, result.error?.message);
+              continue;
+            }
+            
+            if (result.page && result.page.data.data.length > 0) {
+              const customers = result.page.data.data.map(mapApiCustomerToLocal);
+              await saveBatchCustomerData(customers, true);
+              totalSaved += customers.length;
+            }
+          }
+
+          setProgress(prev => ({ 
+            ...prev, 
+            saved: totalSaved,
+            phase: 'fetching'
+          }));
+        }
+      }
+
+      setProgress({
+        isDownloading: false,
+        fetched: totalFetched,
+        saved: totalSaved,
+        total: totalCount,
+        phase: 'complete',
+      });
+
+      return { success: true, count: totalSaved };
+
+    } catch (error: any) {
+      setProgress({
+        isDownloading: false,
+        fetched: 0,
+        saved: 0,
+        total: 0,
+        phase: 'error',
+        error: error?.message ?? 'Unknown error',
+      });
+
+      return {
+        success: false,
+        count: 0,
+        error: error?.message ?? 'Unknown error',
+      };
+    }
+  }, []);
+
+  const resetProgress = useCallback(() => {
+    setProgress({
+      isDownloading: false,
+      fetched: 0,
+      saved: 0,
+      total: 0,
+      phase: 'idle',
+    });
+  }, []);
+
+  return {
+    progress,
+    downloadCustomerData,
+    resetProgress,
+    isDownloading: progress.isDownloading,
   };
 }
