@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 
 import Upload from '@/components/ui/upload';
-import { useReportForm } from '@/utils/reportForm';
+import { useReportForm } from '@/utils/reportFormStore';
 
 export default function ReportScreen() {
   const insets = useSafeAreaInsets();

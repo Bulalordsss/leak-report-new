@@ -1,62 +1,51 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import LeafletMap from '@/components/ui/maps';
-import { getCurrentLocation } from '@/hooks/getLocation';
-import { getNearestMetersFromCustomers, Meter } from '@/hooks/nearestMeter';
-import { loadCustomerData, Customer } from '@/utils/allCustomerData';
+import { useReportsStore } from '@/utils/reportsStore';
 
 export default function NearestMetersScreen() {
   const insets = useSafeAreaInsets();
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [center, setCenter] = useState<{ lat: number; lng: number }>({ lat: 7.0731, lng: 125.613 });
-  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
-  const [meters, setMeters] = useState<Meter[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [dataStatus, setDataStatus] = useState<'loading' | 'loaded' | 'empty'>('loading');
+  
+  // Zustand store
+  const {
+    center,
+    userLocation,
+    meters,
+    selectedId,
+    isLoading,
+    isFindingMeters,
+    dataStatus,
+    setSelectedId,
+    initialize,
+    refreshLocation,
+    findNearestMeters,
+    getSelectedMeter,
+  } = useReportsStore();
 
-  // Load customer data from SQLite on mount
+  // Initialize on mount
   useEffect(() => {
-    (async () => {
-      setIsLoading(true);
-      try {
-        const data = await loadCustomerData();
-        setCustomers(data);
-        setDataStatus(data.length > 0 ? 'loaded' : 'empty');
-        
-        // Get current location and compute nearest meters
-        const loc = await getCurrentLocation();
-        if (loc && data.length > 0) {
-          setCenter(loc);
-          setUserLocation(loc);
-          setMeters(getNearestMetersFromCustomers(loc, data, 3));
-        }
-      } catch (error) {
-        console.error('Error loading customer data:', error);
-        setDataStatus('empty');
-      } finally {
-        setIsLoading(false);
-      }
-    })();
+    initialize();
   }, []);
 
-  const recenter = async () => {
-    const loc = await getCurrentLocation();
-    if (!loc) {
+  const handleRefreshLocation = async () => {
+    const success = await refreshLocation();
+    if (!success) {
       Alert.alert('Location unavailable', 'Unable to fetch your current location.');
-      return;
-    }
-    setCenter(loc);
-    setUserLocation(loc);
-    if (customers.length > 0) {
-      setMeters(getNearestMetersFromCustomers(loc, customers, 3));
     }
   };
 
-  const selected = meters.find(m => m.id === selectedId) || null;
+  const handleFindMeters = async () => {
+    if (!userLocation) {
+      Alert.alert('Location unavailable', 'Please enable location services to find nearby meters.');
+      return;
+    }
+    await findNearestMeters();
+  };
+
+  const selected = getSelectedMeter();
 
   return (
     <View style={styles.page}>
@@ -80,7 +69,11 @@ export default function NearestMetersScreen() {
           <LeafletMap
             center={selected ? { lat: selected.lat, lng: selected.lng } : center}
             zoom={16}
-            markers={selected ? [{ id: selected.id, position: { lat: selected.lat, lng: selected.lng }, title: selected.title } ] : []}
+            markers={
+              selected 
+                ? [{ id: selected.id, position: { lat: selected.lat, lng: selected.lng }, title: selected.title }]
+                : meters.map(m => ({ id: m.id, position: { lat: m.lat, lng: m.lng }, title: `#${m.rank} ${m.id}` }))
+            }
             userLocation={userLocation ?? undefined}
             style={{ flex: 1, width: '100%' }}
           />
@@ -128,7 +121,7 @@ export default function NearestMetersScreen() {
               style={styles.reportBtn}
               activeOpacity={0.85}
               onPress={() => router.push({
-                pathname: '/screens/report',
+                pathname: '/screens/reportForm',
                 params: {
                   id: selected.id,
                   address: selected.address,
@@ -150,7 +143,7 @@ export default function NearestMetersScreen() {
             {isLoading ? (
               <View style={styles.loadingContainer}>
                 <ActivityIndicator size="large" color="#1f3a8a" />
-                <Text style={styles.loadingText}>Loading customer data...</Text>
+                <Text style={styles.loadingText}>Loading...</Text>
               </View>
             ) : dataStatus === 'empty' ? (
               <View style={styles.emptyContainer}>
@@ -160,15 +153,38 @@ export default function NearestMetersScreen() {
               </View>
             ) : meters.length === 0 ? (
               <View style={styles.emptyContainer}>
-                <Ionicons name="location-outline" size={48} color="#6b7280" />
-                <Text style={styles.emptyTitle}>No Meters Found</Text>
-                <Text style={styles.emptyText}>Unable to find nearby meters. Please check your location.</Text>
+                {!userLocation ? (
+                  <>
+                    <Ionicons name="location-outline" size={48} color="#6b7280" />
+                    <Text style={styles.emptyTitle}>Location Not Available</Text>
+                    <Text style={styles.emptyText}>Enable location services to find nearby meters.</Text>
+                    <TouchableOpacity style={styles.loadBtn} onPress={handleRefreshLocation}>
+                      <Ionicons name="navigate-outline" size={18} color="#fff" style={{ marginRight: 8 }} />
+                      <Text style={styles.loadBtnText}>Enable Location</Text>
+                    </TouchableOpacity>
+                  </>
+                ) : isFindingMeters ? (
+                  <>
+                    <ActivityIndicator size="large" color="#1f3a8a" />
+                    <Text style={styles.loadingText}>Finding nearest meters...</Text>
+                  </>
+                ) : (
+                  <>
+                    <Ionicons name="search-outline" size={48} color="#1f3a8a" />
+                    <Text style={styles.emptyTitle}>Ready to Search</Text>
+                    <Text style={styles.emptyText}>Tap the button below to find the 3 nearest meters to your location.</Text>
+                    <TouchableOpacity style={styles.loadBtn} onPress={handleFindMeters}>
+                      <Ionicons name="locate-outline" size={18} color="#fff" style={{ marginRight: 8 }} />
+                      <Text style={styles.loadBtnText}>Find Nearest Meters</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
               </View>
             ) : (
               <>
                 <View style={styles.inlineStatus}>
                   <Ionicons name="checkmark-circle" size={18} color="#10b981" />
-                  <Text style={styles.statusText}>Using offline customer data ({customers.length.toLocaleString()} records)</Text>
+                  <Text style={styles.statusText}>Found {meters.length} nearest meters</Text>
                 </View>
 
                 {meters.map((m, index) => (
@@ -350,5 +366,24 @@ const styles = StyleSheet.create({
     color: '#6b7280',
     fontSize: 14,
     textAlign: 'center',
+  },
+  loadBtn: {
+    marginTop: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1f3a8a',
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    shadowColor: '#1f3a8a',
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 6 },
+  },
+  loadBtnText: { 
+    color: '#fff', 
+    fontWeight: '700',
+    fontSize: 15,
   },
 });

@@ -1,50 +1,36 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { ScrollView, View, Text, TouchableOpacity, StyleSheet, Switch, Alert, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { fetchAndSaveCustomerData } from '@/hooks/downloadCustomerData';
-import { hasCustomerData, loadCustomerData, clearCustomerData } from '@/utils/allCustomerData';
+import { useSettingsStore } from '@/utils/settingsStore';
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
-  const [onlineMaps, setOnlineMaps] = useState(true);
-  const [customerDataStatus, setCustomerDataStatus] = useState<'checking' | 'not_downloaded' | 'downloaded'>('checking');
-  const [customerCount, setCustomerCount] = useState(0);
-  const [downloading, setDownloading] = useState(false);
-  const [downloadProgress, setDownloadProgress] = useState({ current: 0, total: 0 });
+  
+  // Zustand store
+  const {
+    onlineMaps,
+    customerDataStatus,
+    customerCount,
+    downloading,
+    downloadProgress,
+    setOnlineMaps,
+    checkCustomerData,
+    downloadCustomerData,
+    clearCustomerDataAction,
+  } = useSettingsStore();
 
   useEffect(() => {
     checkCustomerData();
   }, []);
 
-  const checkCustomerData = async () => {
-    const exists = await hasCustomerData();
-    if (exists) {
-      const data = await loadCustomerData();
-      setCustomerCount(data.length);
-      setCustomerDataStatus('downloaded');
-    } else {
-      setCustomerDataStatus('not_downloaded');
-    }
-  };
-
   const handleDownloadClientData = async () => {
-    setDownloading(true);
-    setDownloadProgress({ current: 0, total: 0 });
-
-    const result = await fetchAndSaveCustomerData((current, total) => {
-      setDownloadProgress({ current, total });
-    });
-
-    setDownloading(false);
-
+    const result = await downloadCustomerData();
     if (result.success) {
-      setCustomerCount(result.count);
-      setCustomerDataStatus('downloaded');
-      Alert.alert('Success', `Downloaded ${result.count} customer records.`);
+      Alert.alert('Success', result.message);
     } else {
-      Alert.alert('Error', result.error ?? 'Failed to download customer data.');
+      Alert.alert('Error', result.message);
     }
   };
 
@@ -58,9 +44,7 @@ export default function SettingsScreen() {
           text: 'Clear',
           style: 'destructive',
           onPress: async () => {
-            await clearCustomerData();
-            setCustomerDataStatus('not_downloaded');
-            setCustomerCount(0);
+            await clearCustomerDataAction();
             Alert.alert('Cleared', 'Customer data has been cleared.');
           },
         },

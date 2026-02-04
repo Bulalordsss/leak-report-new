@@ -57,43 +57,76 @@ export function getNearestMeters(center: LatLng, meters: Meter[], max = 3): Mete
 }
 
 /**
+ * Fast squared distance calculation (avoids expensive trig functions for comparison)
+ */
+function quickDistanceSquared(a: LatLng, b: LatLng): number {
+  const dLat = b.lat - a.lat;
+  const dLng = b.lng - a.lng;
+  // Approximate correction for longitude at this latitude
+  const cosLat = Math.cos(toRad(a.lat));
+  return dLat * dLat + (dLng * cosLat) * (dLng * cosLat);
+}
+
+/**
  * Find the nearest meters from customer data based on user's location
+ * Optimized to avoid sorting the entire array
  */
 export function getNearestMetersFromCustomers(
   center: LatLng,
   customers: Customer[],
   max = 3
 ): Meter[] {
-  // Filter out customers with invalid coordinates
-  const validCustomers = customers.filter(
-    c => c.latitude !== 0 && c.longitude !== 0 && c.meterNumber
-  );
+  // Keep track of top N nearest customers using a simple array
+  const nearest: { customer: Customer; distSq: number }[] = [];
+  const seenMeterNumbers = new Set<string>();
 
-  // Deduplicate by meter number (keep the first occurrence)
-  const uniqueCustomers = validCustomers.filter(
-    (c, index, self) => index === self.findIndex(t => t.meterNumber === c.meterNumber)
-  );
+  for (const c of customers) {
+    // Skip invalid coordinates or empty meter numbers
+    if (c.latitude === 0 || c.longitude === 0 || !c.meterNumber) {
+      continue;
+    }
 
-  // Calculate distance for each customer
-  const withDistance = uniqueCustomers.map(c => ({
-    customer: c,
-    numericDistance: distanceInMeters(center, { lat: c.latitude, lng: c.longitude }),
-  }));
+    // Skip duplicates
+    if (seenMeterNumbers.has(c.meterNumber)) {
+      continue;
+    }
 
-  // Sort by distance
-  withDistance.sort((a, b) => a.numericDistance - b.numericDistance);
+    const distSq = quickDistanceSquared(center, { lat: c.latitude, lng: c.longitude });
 
-  // Take top N and convert to Meter format
-  return withDistance.slice(0, max).map((item, index) => ({
-    rank: index + 1,
-    id: item.customer.meterNumber,
-    title: item.customer.address,
-    distance: `${item.numericDistance.toFixed(0)}m away`,
-    color: RANK_COLORS[index] || '#6b7280',
-    account: item.customer.accountNumber,
-    address: item.customer.address,
-    dma: item.customer.dma,
-    lat: item.customer.latitude,
-    lng: item.customer.longitude,
-  }));
+    // If we have fewer than max items, just add it
+    if (nearest.length < max) {
+      nearest.push({ customer: c, distSq });
+      seenMeterNumbers.add(c.meterNumber);
+      // Keep sorted
+      nearest.sort((a, b) => a.distSq - b.distSq);
+    } else if (distSq < nearest[max - 1].distSq) {
+      // Replace the farthest one if this is closer
+      seenMeterNumbers.delete(nearest[max - 1].customer.meterNumber);
+      nearest[max - 1] = { customer: c, distSq };
+      seenMeterNumbers.add(c.meterNumber);
+      // Re-sort
+      nearest.sort((a, b) => a.distSq - b.distSq);
+    }
+  }
+
+  // Convert to Meter format with actual distances
+  return nearest.map((item, index) => {
+    const actualDistance = distanceInMeters(center, { 
+      lat: item.customer.latitude, 
+      lng: item.customer.longitude 
+    });
+    
+    return {
+      rank: index + 1,
+      id: item.customer.meterNumber,
+      title: item.customer.address,
+      distance: `${actualDistance.toFixed(0)}m away`,
+      color: RANK_COLORS[index] || '#6b7280',
+      account: item.customer.accountNumber,
+      address: item.customer.address,
+      dma: item.customer.dma,
+      lat: item.customer.latitude,
+      lng: item.customer.longitude,
+    };
+  });
 }
