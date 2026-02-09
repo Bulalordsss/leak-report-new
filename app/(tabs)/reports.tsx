@@ -22,8 +22,10 @@ export default function NearestMetersScreen() {
     initialize,
     refreshLocation,
     findNearestMeters,
-    getSelectedMeter,
   } = useReportsStore();
+
+  // Compute selected meter from subscribed state (this ensures re-render when selectedId changes)
+  const selected = selectedId ? meters.find(m => m.id === selectedId) || null : null;
 
   // Initialize on mount
   useEffect(() => {
@@ -44,8 +46,6 @@ export default function NearestMetersScreen() {
     }
     await findNearestMeters();
   };
-
-  const selected = getSelectedMeter();
 
   return (
     <View style={styles.page}>

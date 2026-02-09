@@ -1,11 +1,12 @@
 import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 
 import Upload from '@/components/ui/upload';
 import { useReportForm } from '@/utils/reportFormStore';
+import { useLeakReport, createLeakReportPayload } from '@/hooks/mobileReportLeak';
 
 export default function ReportScreen() {
   const insets = useSafeAreaInsets();
@@ -13,6 +14,7 @@ export default function ReportScreen() {
 
   const {
     leakType, setLeakType,
+    
     location, setLocation,
     contactPerson, setContactPerson,
     contactNumber, setContactNumber,
@@ -22,6 +24,8 @@ export default function ReportScreen() {
     reset,
   } = useReportForm();
 
+  const { submitReport, isSubmitting, isOnline, pendingCount } = useLeakReport();
+
   const selectedMeter = useMemo(() => ({
     id: params.id ?? '—',
     account: params.account ?? '—',
@@ -30,13 +34,44 @@ export default function ReportScreen() {
     coords: params.coords ?? '—',
   }), [params]);
 
-  const submit = () => {
-    Alert.alert('Submitted', 'Your leak report has been queued for sending.');
-    reset();
-    router.back();
-  };
+  const submit = async () => {
+    // Validate required fields
+    if (!leakType) {
+      Alert.alert('Missing Information', 'Please select a leak type.');
+      return;
+    }
+    if (!location) {
+      Alert.alert('Missing Information', 'Please select a location type.');
+      return;
+    }
 
-  return (
+    const payload = createLeakReportPayload({
+      meterNumber: selectedMeter.id,
+      accountNumber: selectedMeter.account,
+      address: selectedMeter.address,
+      dma: selectedMeter.dma,
+      coordinates: selectedMeter.coords,
+      leakType: leakType,
+      location: location,
+      contactPerson: contactPerson,
+      contactNumber: contactNumber,
+      landmark: landmark,
+      leakPhotos: leakPhotos,
+      landmarkPhotos: landmarkPhotos,
+    });
+
+    const result = await submitReport(payload);
+
+    if (result.success) {
+      Alert.alert(
+        result.cached ? 'Saved Offline' : 'Submitted',
+        result.message,
+        [{ text: 'OK', onPress: () => { reset(); router.back(); } }]
+      );
+    } else {
+      Alert.alert('Error', result.message);
+    }
+  };  return (
     <View style={styles.page}>
       {/* Header */}
       <View style={[styles.header, { paddingTop: Math.max(insets.top, 12) }]}> 
@@ -173,15 +208,45 @@ export default function ReportScreen() {
         </View>
         {/* Footer note + submit */}
         <View style={{ marginHorizontal: 16, marginTop: 12 }}>
+          {/* Network status indicator */}
+          <View style={[styles.inlineInfo, { marginBottom: 8 }]}>
+            <Ionicons 
+              name={isOnline ? "wifi" : "cloud-offline"} 
+              size={18} 
+              color={isOnline ? "#10b981" : "#f59e0b"} 
+            />
+            <Text style={[styles.inlineInfoText, { color: isOnline ? '#10b981' : '#f59e0b', marginLeft: 8 }]}>
+              {isOnline ? 'Online' : 'Offline - Report will be saved locally'}
+            </Text>
+          </View>
+
+          {pendingCount > 0 && (
+            <View style={[styles.inlineInfo, { marginBottom: 8 }]}>
+              <Ionicons name="time-outline" size={18} color="#6b7280" />
+              <Text style={[styles.inlineInfoText, { color: '#6b7280', marginLeft: 8 }]}>
+                {pendingCount} pending report{pendingCount > 1 ? 's' : ''} waiting to sync
+              </Text>
+            </View>
+          )}
+
           <View style={styles.inlineInfo}>
             <Ionicons name="send-outline" size={18} color="#1f3a8a" />
             <Text style={[styles.inlineInfoText, { color: '#374151', marginLeft: 8 }]}>Report will be sent to our team</Text>
           </View>
-          <TouchableOpacity style={styles.reportBtn} activeOpacity={0.9} onPress={submit}>
-            <Text style={styles.reportBtnText}>Send Report</Text>
+          <TouchableOpacity 
+            style={[styles.reportBtn, isSubmitting && styles.reportBtnDisabled]} 
+            activeOpacity={0.9} 
+            onPress={submit}
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <Text style={styles.reportBtnText}>Send Report</Text>
+            )}
           </TouchableOpacity>
           {/* Clear form button */}
-          <TouchableOpacity style={styles.clearBtn} activeOpacity={0.9} onPress={reset}>
+          <TouchableOpacity style={styles.clearBtn} activeOpacity={0.9} onPress={reset} disabled={isSubmitting}>
             <Text style={styles.clearBtnText}>Clear Form</Text>
           </TouchableOpacity>
         </View>
@@ -310,6 +375,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.18,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 6 },
+  },
+  reportBtnDisabled: {
+    opacity: 0.6,
   },
   reportBtnText: { color: '#fff', fontWeight: '700' },
   clearBtn: {
