@@ -11,10 +11,14 @@ export type LeafletMapProps = {
   markers?: MapMarker[];
   /** Optional user location; will show a person marker on the map when provided */
   userLocation?: LatLng;
+  /** Path to offline tiles directory. When set, tiles load from file:// */
+  offlineTilesPath?: string | null;
   style?: any;
 };
 
-export default function LeafletMap({ center, zoom = 15, markers = [], userLocation, style }: LeafletMapProps) {
+export default function LeafletMap({ center, zoom = 15, markers = [], userLocation, offlineTilesPath, style }: LeafletMapProps) {
+  const useOffline = !!offlineTilesPath;
+
   const html = useMemo(() => `<!DOCTYPE html>
 <html>
 <head>
@@ -30,22 +34,33 @@ export default function LeafletMap({ center, zoom = 15, markers = [], userLocati
   <div id="map"></div>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
-    const center = [${center.lat}, ${center.lng}];
-    const map = L.map('map').setView(center, ${zoom});
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    var center = [${center.lat}, ${center.lng}];
+    var map = L.map('map').setView(center, ${zoom});
+
+    var tileUrl = ${useOffline}
+      ? '${offlineTilesPath}{z}/{x}/{y}.png'
+      : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+
+    var attribution = ${useOffline}
+      ? 'Davao Roads &copy; DCWD'
+      : '&copy; OpenStreetMap';
+
+    L.tileLayer(tileUrl, {
       maxZoom: 19,
-      attribution: '&copy; OpenStreetMap'
+      maxNativeZoom: ${useOffline ? 17 : 19},
+      tileSize: 256,
+      attribution: attribution,
+      errorTileUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
     }).addTo(map);
 
-    const markers = ${JSON.stringify(markers)};
-    markers.forEach(m => {
-      const mk = L.marker([m.position.lat, m.position.lng]).addTo(map);
+    var markers = ${JSON.stringify(markers)};
+    markers.forEach(function(m) {
+      var mk = L.marker([m.position.lat, m.position.lng]).addTo(map);
       if (m.title) mk.bindPopup(m.title);
     });
 
-    // Optional user location with a person-shaped marker
     ${userLocation ? `
-    const userIcon = L.divIcon({
+    var userIcon = L.divIcon({
       className: 'user-location-icon',
       html: '<div style="width:18px;height:18px;border-radius:50%;background:#2563eb;border:2px solid #ffffff;box-shadow:0 0 6px rgba(37,99,235,0.8);"></div>',
       iconSize: [18, 18],
@@ -55,12 +70,12 @@ export default function LeafletMap({ center, zoom = 15, markers = [], userLocati
     ` : ''}
 
     map.on('click', function(e) {
-      const payload = { lat: e.latlng.lat, lng: e.latlng.lng };
-      window.ReactNativeWebView?.postMessage(JSON.stringify({ type: 'map-click', payload }));
+      var payload = { lat: e.latlng.lat, lng: e.latlng.lng };
+      window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'map-click', payload: payload }));
     });
   </script>
 </body>
-</html>`, [center.lat, center.lng, zoom, markers, userLocation?.lat, userLocation?.lng]);
+</html>`, [center.lat, center.lng, zoom, markers, userLocation?.lat, userLocation?.lng, offlineTilesPath, useOffline]);
 
   return (
     <View style={[styles.container, style]}>
@@ -69,6 +84,9 @@ export default function LeafletMap({ center, zoom = 15, markers = [], userLocati
         source={{ html }}
         javaScriptEnabled
         domStorageEnabled
+        allowFileAccess={true}
+        allowUniversalAccessFromFileURLs={true}
+        allowingReadAccessToURL={'file://'}
         style={{ flex: 1 }}
       />
     </View>

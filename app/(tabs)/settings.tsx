@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useSettingsStore } from '@/utils/settingsStore';
+import { useMapStore } from '@/utils/mapStore';
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
@@ -16,13 +17,30 @@ export default function SettingsScreen() {
     downloading,
     downloadProgress,
     setOnlineMaps,
+    loadOfflineMapPreference,
     checkCustomerData,
     downloadCustomerData,
     clearCustomerDataAction,
   } = useSettingsStore();
 
+  // Map store
+  const {
+    isDownloading: mapDownloading,
+    isUnzipping: mapUnzipping,
+    isReady: mapReady,
+    downloadProgress: mapDownloadProgress,
+    statusMessage: mapStatusMessage,
+    error: mapError,
+    checkExistingMap,
+    initializeMap,
+    clearMapData,
+    setError: setMapError,
+  } = useMapStore();
+
   useEffect(() => {
     checkCustomerData();
+    checkExistingMap();
+    loadOfflineMapPreference();
   }, []);
 
   const handleDownloadClientData = async () => {
@@ -52,6 +70,60 @@ export default function SettingsScreen() {
     );
   };
 
+  // ─── Offline Map handlers ───────────────────────────────────────
+
+  const handleDownloadMap = () => {
+    Alert.alert(
+      'Download Map',
+      'This will download the offline map. You can continue using the app while it downloads.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Download',
+          onPress: () => {
+            initializeMap();
+          },
+        },
+      ],
+    );
+  };
+
+  const handleClearMap = () => {
+    Alert.alert(
+      'Clear Map Data',
+      'This will delete all downloaded map files. You will need to download again to use offline maps.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear',
+          style: 'destructive',
+          onPress: async () => {
+            await clearMapData();
+            Alert.alert('Cleared', 'All offline map data has been removed.');
+          },
+        },
+      ],
+    );
+  };
+
+  const handleViewMap = () => {
+    if (!mapReady) {
+      Alert.alert('Map Not Ready', 'Please download the map first before viewing.', [{ text: 'OK' }]);
+      return;
+    }
+    router.push('/screens/mapViewer' as any);
+  };
+
+  // Show map error
+  useEffect(() => {
+    if (mapError) {
+      Alert.alert('Map Error', mapError, [
+        { text: 'Retry', onPress: handleDownloadMap },
+        { text: 'OK', onPress: () => setMapError(null) },
+      ]);
+    }
+  }, [mapError]);
+
   return (
     <View style={styles.page}>
       {/* Header */}
@@ -74,22 +146,80 @@ export default function SettingsScreen() {
           </View>
 
           <View style={{ marginTop: 8 }}>
-            <Row label="Status:" value={onlineMaps ? 'Online' : 'Offline'} />
-            <Row label="Cached Tiles:" value={onlineMaps ? '—' : '0'} />
-            <Row label="Storage Used:" value={onlineMaps ? '—' : '0.0 MB'} />
+            <Row label="Map Status:" value={mapReady ? '✅ Downloaded' : '⬇️ Not Downloaded'} />
+            <Row label="Mode:" value={onlineMaps ? 'Online' : 'Offline'} />
           </View>
 
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 12, justifyContent: 'space-between' }}>
-            <Text style={{ color: '#374151', fontWeight: '600' }}>Use Online Maps</Text>
-            <Switch value={onlineMaps} onValueChange={setOnlineMaps} />
-          </View>
+          {/* Download / Extraction progress */}
+          {mapDownloading && (
+            <View style={styles.progressSection}>
+              <Text style={styles.progressLabel}>{mapStatusMessage}</Text>
+              <View style={styles.progressBar}>
+                <View style={[styles.progressFill, { width: `${mapDownloadProgress}%` }]} />
+              </View>
+              <Text style={styles.progressText}>{mapDownloadProgress}%</Text>
+            </View>
+          )}
 
-          {!onlineMaps && (
-            <>
-              <PrimaryButton title="Download Offline Maps" onPress={() => { /* TODO: implement */ }} />
-              <View style={{ height: 8 }} />
-              <PrimaryButton title="Clear Cache" onPress={() => { /* TODO: clear cached tiles */ }} />
-            </>
+          {mapUnzipping && (
+            <View style={styles.progressSection}>
+              <ActivityIndicator size="small" color="#1f3a8a" style={{ marginBottom: 6 }} />
+              <Text style={styles.progressLabel}>{mapStatusMessage}</Text>
+            </View>
+          )}
+
+          {/* Toggle online/offline - only when map is ready */}
+          {mapReady && !mapDownloading && !mapUnzipping && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 12, justifyContent: 'space-between' }}>
+              <View style={{ flex: 1, marginRight: 12 }}>
+                <Text style={{ color: '#374151', fontWeight: '600' }}>Use Online Maps</Text>
+                <Text style={{ color: '#9ca3af', fontSize: 12, marginTop: 2 }}>
+                  {onlineMaps ? 'Using online map tiles' : 'Using downloaded map tiles'}
+                </Text>
+              </View>
+              <Switch value={onlineMaps} onValueChange={setOnlineMaps} />
+            </View>
+          )}
+
+          {/* Action buttons */}
+          {!mapDownloading && !mapUnzipping && (
+            <View style={{ marginTop: 12 }}>
+              <TouchableOpacity
+                style={[styles.primaryBtn, (mapDownloading || mapUnzipping) && { opacity: 0.4 }]}
+                activeOpacity={0.85}
+                onPress={handleDownloadMap}
+                disabled={mapDownloading || mapUnzipping}
+              >
+                <Ionicons name="download-outline" size={18} color="#fff" style={{ marginRight: 8 }} />
+                <Text style={styles.primaryBtnText}>
+                  {mapReady ? 'Re-download Map' : 'Download Offline Map'}
+                </Text>
+              </TouchableOpacity>
+
+              {mapReady && (
+                <>
+                  <View style={{ height: 8 }} />
+                  <TouchableOpacity
+                    style={styles.viewMapBtn}
+                    activeOpacity={0.85}
+                    onPress={handleViewMap}
+                  >
+                    <Ionicons name="map" size={18} color="#1f3a8a" style={{ marginRight: 8 }} />
+                    <Text style={styles.viewMapBtnText}>View Map</Text>
+                  </TouchableOpacity>
+
+                  <View style={{ height: 8 }} />
+                  <TouchableOpacity
+                    style={styles.clearBtn}
+                    activeOpacity={0.85}
+                    onPress={handleClearMap}
+                  >
+                    <Ionicons name="trash-outline" size={18} color="#ef4444" style={{ marginRight: 8 }} />
+                    <Text style={styles.clearBtnText}>Clear Map Data</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
           )}
         </View>
 
@@ -308,4 +438,52 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   clearBtnText: { color: '#ef4444', fontWeight: '700' },
+
+  // Progress styles for map download
+  progressSection: {
+    marginTop: 12,
+    backgroundColor: '#f9fafb',
+    borderRadius: 12,
+    padding: 12,
+  },
+  progressLabel: {
+    fontSize: 13,
+    color: '#6b7280',
+    marginBottom: 8,
+    fontWeight: '500',
+  },
+  progressBar: {
+    height: 8,
+    backgroundColor: '#e5e7eb',
+    borderRadius: 4,
+    overflow: 'hidden',
+    marginBottom: 4,
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#1f3a8a',
+    borderRadius: 4,
+  },
+  progressText: {
+    fontSize: 12,
+    color: '#6b7280',
+    textAlign: 'right',
+    fontWeight: '600',
+  },
+
+  // View map button
+  viewMapBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#eef2ff',
+    borderRadius: 14,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: '#1f3a8a',
+  },
+  viewMapBtnText: {
+    color: '#1f3a8a',
+    fontWeight: '700',
+  },
 });

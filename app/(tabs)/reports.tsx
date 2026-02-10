@@ -5,6 +5,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import LeafletMap from '@/components/ui/maps';
 import { useReportsStore } from '@/utils/reportsStore';
+import { useMapStore } from '@/utils/mapStore';
+import { useSettingsStore } from '@/utils/settingsStore';
 
 export default function NearestMetersScreen() {
   const insets = useSafeAreaInsets();
@@ -23,6 +25,17 @@ export default function NearestMetersScreen() {
     refreshLocation,
     findNearestMeters,
   } = useReportsStore();
+
+  // Offline map state
+  const mapReady = useMapStore((s) => s.isReady);
+  const mapTilesPath = useMapStore((s) => s.mapTilesPath);
+  const onlineMaps = useSettingsStore((s) => s.onlineMaps);
+  const offlineTilesPath = mapReady && !onlineMaps ? mapTilesPath : null;
+
+  // Customer data download state
+  const downloading = useSettingsStore((s) => s.downloading);
+  const downloadProgress = useSettingsStore((s) => s.downloadProgress);
+  const downloadCustomerData = useSettingsStore((s) => s.downloadCustomerData);
 
   // Compute selected meter from subscribed state (this ensures re-render when selectedId changes)
   const selected = selectedId ? meters.find(m => m.id === selectedId) || null : null;
@@ -45,6 +58,17 @@ export default function NearestMetersScreen() {
       return;
     }
     await findNearestMeters();
+  };
+
+  const handleDownloadCustomerData = async () => {
+    const result = await downloadCustomerData();
+    if (result.success) {
+      Alert.alert('Success', result.message, [
+        { text: 'OK', onPress: () => initialize() },
+      ]);
+    } else {
+      Alert.alert('Error', result.message);
+    }
   };
 
   return (
@@ -75,6 +99,7 @@ export default function NearestMetersScreen() {
                 : meters.map(m => ({ id: m.id, position: { lat: m.lat, lng: m.lng }, title: `#${m.rank} ${m.id}` }))
             }
             userLocation={userLocation ?? undefined}
+            offlineTilesPath={offlineTilesPath}
             style={{ flex: 1, width: '100%' }}
           />
         </View>
@@ -149,7 +174,22 @@ export default function NearestMetersScreen() {
               <View style={styles.emptyContainer}>
                 <Ionicons name="alert-circle-outline" size={48} color="#f59e0b" />
                 <Text style={styles.emptyTitle}>No Customer Data</Text>
-                <Text style={styles.emptyText}>Please download customer data from the Settings tab first.</Text>
+                <Text style={styles.emptyText}>Download customer data to find nearby meters.</Text>
+                {downloading ? (
+                  <View style={styles.downloadingRow}>
+                    <ActivityIndicator size="small" color="#1f3a8a" />
+                    <Text style={styles.downloadingText}>
+                      Downloading... {downloadProgress.total > 0
+                        ? `${downloadProgress.current.toLocaleString()} / ${downloadProgress.total.toLocaleString()}`
+                        : ''}
+                    </Text>
+                  </View>
+                ) : (
+                  <TouchableOpacity style={styles.loadBtn} onPress={handleDownloadCustomerData}>
+                    <Ionicons name="cloud-download-outline" size={18} color="#fff" style={{ marginRight: 8 }} />
+                    <Text style={styles.loadBtnText}>Download Customer Data</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             ) : meters.length === 0 ? (
               <View style={styles.emptyContainer}>
@@ -385,5 +425,16 @@ const styles = StyleSheet.create({
     color: '#fff', 
     fontWeight: '700',
     fontSize: 15,
+  },
+  downloadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 16,
+    gap: 8,
+  },
+  downloadingText: {
+    color: '#1f3a8a',
+    fontWeight: '600',
+    fontSize: 14,
   },
 });

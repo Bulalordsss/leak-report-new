@@ -2,30 +2,25 @@ import { useEffect, useState } from "react";
 import { Stack, Redirect, usePathname } from "expo-router";
 import { View, ActivityIndicator } from "react-native";
 import { useAuthStore } from "../utils/authStore";
-import { getToken } from "@/utils/tokenStorage";
 
 export default function Layout() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const restoreSession = useAuthStore((s) => s.restoreSession);
   const pathname = usePathname();
   
   const [isLoading, setIsLoading] = useState(true);
-  const [hasToken, setHasToken] = useState(false);
 
   useEffect(() => {
-    checkToken();
+    (async () => {
+      try {
+        await restoreSession();
+      } catch (error) {
+        console.error('Error restoring session:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    })();
   }, []);
-
-  const checkToken = async () => {
-    try {
-      const token = await getToken();
-      setHasToken(!!token);
-    } catch (error) {
-      console.error('Error checking token:', error);
-      setHasToken(false);
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   // Show loading indicator while checking token
   if (isLoading) {
@@ -36,8 +31,8 @@ export default function Layout() {
     );
   }
 
-  // Redirect to login if not authenticated and no token, unless already on login page
-  if (!isAuthenticated && !hasToken && pathname !== "/login") {
+  // Redirect to login if not authenticated, unless already on login page
+  if (!isAuthenticated && pathname !== "/login") {
     return <Redirect href="/login" />;
   }
 

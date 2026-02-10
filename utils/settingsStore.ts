@@ -1,6 +1,9 @@
 import { create } from 'zustand';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { fetchAndSaveCustomerData } from '@/hooks/downloadCustomerData';
 import { hasCustomerData, loadCustomerData, clearCustomerData } from '@/utils/allCustomerData';
+
+const OFFLINE_MAP_KEY = '@offline_map_enabled';
 
 type CustomerDataStatus = 'checking' | 'not_downloaded' | 'downloaded';
 
@@ -20,7 +23,8 @@ interface SettingsState {
   downloadProgress: DownloadProgress;
   
   // Actions
-  setOnlineMaps: (value: boolean) => void;
+  setOnlineMaps: (value: boolean) => Promise<void>;
+  loadOfflineMapPreference: () => Promise<void>;
   
   // Async actions
   checkCustomerData: () => Promise<void>;
@@ -37,7 +41,27 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   downloadProgress: { current: 0, total: 0 },
   
   // Simple setters
-  setOnlineMaps: (value) => set({ onlineMaps: value }),
+  setOnlineMaps: async (value) => {
+    set({ onlineMaps: value });
+    try {
+      // Store the inverse because the key represents "offline enabled"
+      await AsyncStorage.setItem(OFFLINE_MAP_KEY, (!value).toString());
+    } catch (error) {
+      console.log('Error saving offline map preference:', error);
+    }
+  },
+
+  loadOfflineMapPreference: async () => {
+    try {
+      const savedPreference = await AsyncStorage.getItem(OFFLINE_MAP_KEY);
+      if (savedPreference !== null) {
+        // Key stores "offline enabled", so invert for "online maps"
+        set({ onlineMaps: savedPreference !== 'true' });
+      }
+    } catch (error) {
+      console.log('Error loading offline map preference:', error);
+    }
+  },
   
   // Check if customer data exists
   checkCustomerData: async () => {

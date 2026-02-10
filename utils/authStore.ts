@@ -3,6 +3,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { loginRequest } from "../services/authService";
 import { BackendUser } from "../utils/auth";
 
+const USER_KEY = "auth_user";
+
 interface AuthState {
   user: BackendUser | null;
   token: string | null;
@@ -11,6 +13,7 @@ interface AuthState {
 
   login: (username: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  restoreSession: () => Promise<boolean>;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -27,7 +30,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       const res = await loginRequest(username, password);
       console.log("[auth] login response", res);
 
-      const { token, ...user } = res?.data || ({} as any);
+      const { token, refreshToken, tokenExpiry, ...user } = res?.data || ({} as any);
       console.log("[auth] extracted", { token, user });
 
       if (!token) {
@@ -35,11 +38,18 @@ export const useAuthStore = create<AuthState>((set) => ({
         throw new Error("Missing token");
       }
 
-      // Save token if you want session persistence in future
+      // If the API returns username as null, store the login username
+      const userWithUsername: BackendUser = {
+        ...user,
+        username: user.username || username,
+      };
+
+      // Persist both token and user data
       await AsyncStorage.setItem("access_token", token);
+      await AsyncStorage.setItem(USER_KEY, JSON.stringify(userWithUsername));
 
       set({
-        user: user as BackendUser,
+        user: userWithUsername,
         token,
         isAuthenticated: true,
         isLoading: false,
@@ -56,9 +66,33 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
   },
 
+  restoreSession: async () => {
+    try {
+      const [token, userJson] = await Promise.all([
+        AsyncStorage.getItem("access_token"),
+        AsyncStorage.getItem(USER_KEY),
+      ]);
+
+      if (token && userJson) {
+        const user: BackendUser = JSON.parse(userJson);
+        console.log("[auth] session restored for", user.empId);
+        set({
+          user,
+          token,
+          isAuthenticated: true,
+        });
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error("[auth] restoreSession error:", error);
+      return false;
+    }
+  },
+
   logout: async () => {
     console.log("[auth] logout start");
-    await AsyncStorage.removeItem("access_token");
+    await AsyncStorage.multiRemove(["access_token", USER_KEY]);
 
     set({
       user: null,
