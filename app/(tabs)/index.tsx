@@ -10,7 +10,7 @@ import { useMobileReportStore } from '@/utils/mobileReportStore';
 export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
   const user = useAuthStore((s) => s.user);
-  const { counts, isLoading, error, fetchDashboard } = useDashboardStore();
+  const { counts, reports, isLoading, error, fetchDashboard } = useDashboardStore();
   const { cachedReports, loadCachedReports, getPendingCount, getFailedCount } = useMobileReportStore();
   const unsyncedCount = getPendingCount() + getFailedCount();
 
@@ -27,6 +27,14 @@ export default function DashboardScreen() {
     if (hour < 18) return 'Good Afternoon';
     return 'Good Evening';
   }, []);
+
+  // Get the 3 most recent reports
+  const recentReports = useMemo(() => {
+    return reports
+      .slice()
+      .sort((a, b) => new Date(b.dtReported).getTime() - new Date(a.dtReported).getTime())
+      .slice(0, 3);
+  }, [reports]);
 
   const initials = user
     ? `${user.fName?.charAt(0) ?? ''}${user.lName?.charAt(0) ?? ''}`.toUpperCase()
@@ -62,18 +70,20 @@ export default function DashboardScreen() {
         {/* Summary card */}
         <View style={styles.summaryCard}>
           <View style={styles.summaryItem}>
-            <Text style={styles.summaryValue}>{counts.totalCount}</Text>
+            <Text style={styles.summaryValue}>{cachedReports.length}</Text>
             <Text style={styles.summaryLabel}>Total</Text>
           </View>
           <View style={styles.separator} />
           <View style={styles.summaryItem}>
-            <Text style={[styles.summaryValue, { color: '#10b981' }]}>{counts.repairedCount}</Text>
-            <Text style={styles.summaryLabel}>Repaired</Text>
+            <Text style={[styles.summaryValue, { color: '#10b981' }]}>
+              {cachedReports.filter(r => r.syncStatus === 'synced' && r.serverReferenceNumber).length}
+            </Text>
+            <Text style={styles.summaryLabel}>Synced</Text>
           </View>
           <View style={styles.separator} />
           <View style={styles.summaryItem}>
-            <Text style={[styles.summaryValue, { color: '#0ea5e9' }]}>{counts.reportedCount}</Text>
-            <Text style={styles.summaryLabel}>Reported</Text>
+            <Text style={[styles.summaryValue, { color: '#6b7280' }]}>{unsyncedCount}</Text>
+            <Text style={styles.summaryLabel}>Not Synced</Text>
           </View>
         </View>
 
@@ -94,107 +104,83 @@ export default function DashboardScreen() {
           </View>
         )}
 
-        {/* Leak Detection Overview */}
-        <Text style={styles.sectionTitle}>Leak Detection Overview</Text>
+        {/* Recent Activity */}
+        <Text style={styles.sectionTitle}>Recent Activity</Text>
 
-        <View style={styles.card}>
-          <View style={[styles.iconBadge, { backgroundColor: '#e0f2fe', borderColor: '#38bdf8' }]}> 
-            <Ionicons name="water-outline" size={20} color="#0ea5e9" />
+        {recentReports.length === 0 && !isLoading ? (
+          <View style={styles.emptyState}>
+            <Ionicons name="document-outline" size={48} color="#9ca3af" />
+            <Text style={styles.emptyStateText}>No recent reports</Text>
+            <Text style={styles.emptyStateSubtext}>Your submitted reports will appear here</Text>
           </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.cardTitle}>Total Reports</Text>
-            <Text style={styles.cardSubtitle}>All leak reports</Text>
-          </View>
-          <Text style={styles.cardValue}>{counts.totalCount}</Text>
-        </View>
+        ) : (
+          recentReports.map((report, index) => {
+            const reportDate = new Date(report.dtReported);
+            const formattedDate = reportDate.toLocaleDateString('en-US', { 
+              month: 'short', 
+              day: 'numeric',
+              year: 'numeric'
+            });
+            const formattedTime = reportDate.toLocaleTimeString('en-US', { 
+              hour: '2-digit', 
+              minute: '2-digit'
+            });
 
-        <View style={styles.card}>
-          <View style={[styles.iconBadge, { backgroundColor: '#dbeafe', borderColor: '#60a5fa' }]}> 
-            <Ionicons name="document-text-outline" size={20} color="#3b82f6" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.cardTitle}>Reported</Text>
-            <Text style={styles.cardSubtitle}>Submitted reports</Text>
-          </View>
-          <Text style={[styles.cardValue, { color: '#3b82f6' }]}>{counts.reportedCount}</Text>
-        </View>
+            // Determine status - Synced or Not Synced based on refNo
+            const isSynced = report.refNo && report.refNo.trim() !== '';
+            const statusColor = isSynced ? '#10b981' : '#6b7280';
+            const statusIcon = isSynced ? 'checkmark-circle' : 'cloud-upload-outline';
+            const statusText = isSynced ? 'Synced' : 'Not Synced';
 
-        <View style={styles.card}>
-          <View style={[styles.iconBadge, { backgroundColor: '#fef3c7', borderColor: '#fbbf24' }]}> 
-            <Ionicons name="send-outline" size={20} color="#f59e0b" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.cardTitle}>Dispatched</Text>
-            <Text style={styles.cardSubtitle}>Sent for repair</Text>
-          </View>
-          <Text style={[styles.cardValue, { color: '#f59e0b' }]}>{counts.dispatchedCount}</Text>
-        </View>
+            // Get leak type label
+            const leakTypeLabels: { [key: number]: string } = {
+              36: 'Early Detection',
+              37: 'Unidentified',
+              38: 'Serviceline',
+              39: 'Mainline',
+              40: 'Others'
+            };
+            const leakTypeLabel = leakTypeLabels[report.leakTypeId] || 'Unknown';
 
-        <View style={styles.card}>
-          <View style={[styles.iconBadge, { backgroundColor: '#d1fae5', borderColor: '#34d399' }]}> 
-            <Ionicons name="checkmark-circle-outline" size={20} color="#10b981" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.cardTitle}>Repaired</Text>
-            <Text style={styles.cardSubtitle}>Completed fixes</Text>
-          </View>
-          <Text style={[styles.cardValue, { color: '#10b981' }]}>{counts.repairedCount}</Text>
-        </View>
-
-        <View style={styles.card}>
-          <View style={[styles.iconBadge, { backgroundColor: '#ede9fe', borderColor: '#a78bfa' }]}> 
-            <Ionicons name="calendar-outline" size={20} color="#7c3aed" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.cardTitle}>Scheduled</Text>
-            <Text style={styles.cardSubtitle}>Pending schedule</Text>
-          </View>
-          <Text style={[styles.cardValue, { color: '#7c3aed' }]}>{counts.scheduledCount}</Text>
-        </View>
-
-        <View style={styles.card}>
-          <View style={[styles.iconBadge, { backgroundColor: '#fce7f3', borderColor: '#f472b6' }]}> 
-            <Ionicons name="swap-horizontal-outline" size={20} color="#ec4899" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.cardTitle}>Turnover</Text>
-            <Text style={styles.cardSubtitle}>Handed over</Text>
-          </View>
-          <Text style={[styles.cardValue, { color: '#ec4899' }]}>{counts.turnoverCount}</Text>
-        </View>
-
-        <View style={styles.card}>
-          <View style={[styles.iconBadge, { backgroundColor: '#fff7ed', borderColor: '#fb923c' }]}> 
-            <Ionicons name="speedometer-outline" size={20} color="#f97316" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.cardTitle}>After Meter</Text>
-            <Text style={styles.cardSubtitle}>Post-meter leaks</Text>
-          </View>
-          <Text style={[styles.cardValue, { color: '#f97316' }]}>{counts.afterCount}</Text>
-        </View>
-
-        <View style={styles.card}>
-          <View style={[styles.iconBadge, { backgroundColor: '#fee2e2', borderColor: '#ef4444' }]}> 
-            <Ionicons name="alert-circle-outline" size={20} color="#ef4444" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.cardTitle}>Not Found</Text>
-            <Text style={styles.cardSubtitle}>Unlocated leaks</Text>
-          </View>
-          <Text style={[styles.cardValue, { color: '#ef4444' }]}>{counts.notFoundCount}</Text>
-        </View>
-
-        <View style={styles.card}>
-          <View style={[styles.iconBadge, { backgroundColor: '#ecfdf5', borderColor: '#6ee7b7' }]}> 
-            <Ionicons name="checkmark-done-outline" size={20} color="#059669" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.cardTitle}>Already Repaired</Text>
-            <Text style={styles.cardSubtitle}>Previously fixed</Text>
-          </View>
-          <Text style={[styles.cardValue, { color: '#059669' }]}>{counts.alreadyRepaired}</Text>
-        </View>
+            return (
+              <View key={report.id} style={styles.activityCard}>
+                <View style={styles.activityHeader}>
+                  <View style={[styles.activityIcon, { backgroundColor: `${statusColor}20`, borderColor: statusColor }]}>
+                    <Ionicons name={statusIcon} size={20} color={statusColor} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.activityTitle}>{leakTypeLabel} Leak</Text>
+                    <Text style={styles.activitySubtitle}>{report.reportedLocation}</Text>
+                  </View>
+                  <View style={[styles.statusBadge, { backgroundColor: `${statusColor}20` }]}>
+                    <Text style={[styles.statusBadgeText, { color: statusColor }]}>{statusText}</Text>
+                  </View>
+                </View>
+                
+                <View style={styles.activityDetails}>
+                  <View style={styles.activityDetailRow}>
+                    <Ionicons name="location-outline" size={14} color="#6b7280" />
+                    <Text style={styles.activityDetailText} numberOfLines={1}>
+                      {report.reportedLandmark || 'No landmark'}
+                    </Text>
+                  </View>
+                  <View style={styles.activityDetailRow}>
+                    <Ionicons name="calendar-outline" size={14} color="#6b7280" />
+                    <Text style={styles.activityDetailText}>
+                      {formattedDate} at {formattedTime}
+                    </Text>
+                  </View>
+                  {report.refNo && (
+                    <View style={styles.activityDetailRow}>
+                      <Ionicons name="document-text-outline" size={14} color="#6b7280" />
+                      <Text style={styles.activityDetailText}>Ref: {report.refNo}</Text>
+                    </View>
+                  )}
+                </View>
+              </View>
+            );
+          })
+        )}
 
         {/* See Submitted Reports button */}
         <View style={{ marginHorizontal: 16, marginTop: 8 }}>
@@ -342,4 +328,90 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   unsyncedBadgeText: { color: '#fff', fontWeight: '700', fontSize: 11 },
+
+  // Empty state styles
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+    marginHorizontal: 16,
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 2,
+  },
+  emptyStateText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#374151',
+    marginTop: 12,
+  },
+  emptyStateSubtext: {
+    fontSize: 13,
+    color: '#9ca3af',
+    marginTop: 4,
+  },
+
+  // Activity card styles
+  activityCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    marginHorizontal: 16,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 2,
+  },
+  activityHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  activityIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+    borderWidth: 1.5,
+  },
+  activityTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  activitySubtitle: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginTop: 2,
+  },
+  statusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  statusBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  activityDetails: {
+    gap: 6,
+  },
+  activityDetailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  activityDetailText: {
+    fontSize: 13,
+    color: '#6b7280',
+    flex: 1,
+  },
 });

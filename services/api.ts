@@ -1,5 +1,6 @@
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { router } from "expo-router";
 
 export const api = axios.create({
   baseURL: "https://dev-api.davao-water.gov.ph",
@@ -15,3 +16,18 @@ api.interceptors.request.use(async (config) => {
   }
   return config;
 });
+
+// Add response interceptor to handle token expiration
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    if (error.response?.status === 401) {
+      // Token expired or invalid - clear session and redirect to login
+      console.log('[API] Token expired or invalid, redirecting to login...');
+      await AsyncStorage.removeItem("access_token");
+      await AsyncStorage.removeItem("@auth_user");
+      router.replace("/login");
+    }
+    return Promise.reject(error);
+  }
+);

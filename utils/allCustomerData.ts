@@ -1,4 +1,5 @@
 import * as SQLite from 'expo-sqlite';
+import { InteractionManager } from 'react-native';
 
 export type Customer = {
   meterNumber: string;
@@ -21,6 +22,15 @@ let initPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
 // Simple initialization - just open the database
 async function initDatabase(): Promise<SQLite.SQLiteDatabase> {
+  console.log('[CustomerDB] Starting database initialization...');
+  
+  // Defer to allow UI to render first
+  await new Promise(resolve => {
+    InteractionManager.runAfterInteractions(() => {
+      setTimeout(resolve, 100);
+    });
+  });
+  
   console.log('[CustomerDB] Opening database...');
   
   // Open the database

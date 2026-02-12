@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import * as FileSystem from 'expo-file-system/legacy';
 import { unzipSync } from 'fflate';
+import { InteractionManager } from 'react-native';
 
 const MAP_URL = 'https://davao-water.gov.ph/dcwdApps/mobileApps/reactMap/davroad.zip';
 
@@ -73,8 +74,22 @@ export const useMapStore = create<MapState>((set, get) => ({
       // Create directory if it doesn't exist
       await FileSystem.makeDirectoryAsync(mapDir, { intermediates: true });
 
+      // Use InteractionManager to defer download until UI is ready
+      await new Promise(resolve => {
+        InteractionManager.runAfterInteractions(() => {
+          setTimeout(resolve, 100);
+        });
+      });
+
       // Phase 1: Download
       await downloadMap(mapUrl, zipPath, set);
+
+      // Use InteractionManager again before extraction
+      await new Promise(resolve => {
+        InteractionManager.runAfterInteractions(() => {
+          setTimeout(resolve, 100);
+        });
+      });
 
       // Phase 2: Unzip
       await unzipMap(zipPath, extractPath, set);

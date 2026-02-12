@@ -7,16 +7,17 @@ import { router, useLocalSearchParams } from 'expo-router';
 import Upload from '@/components/ui/upload';
 import { useReportForm } from '@/utils/reportFormStore';
 import { useLeakReport, createLeakReportPayload } from '@/hooks/mobileReportLeak';
+import { useAuthStore } from '@/utils/authStore';
 
 export default function ReportScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ id?: string; address?: string; account?: string; dma?: string; coords?: string }>();
+  const { user } = useAuthStore();
 
   const {
     leakType, setLeakType,
     
     location, setLocation,
-    contactPerson, setContactPerson,
     contactNumber, setContactNumber,
     landmark, setLandmark,
     leakPhotos, setLeakPhotos,
@@ -25,6 +26,12 @@ export default function ReportScreen() {
   } = useReportForm();
 
   const { submitReport, isSubmitting, isOnline, pendingCount } = useLeakReport();
+
+  // Auto-populate contact person from logged-in user (use empId or username)
+  const contactPerson = useMemo(() => {
+    if (!user) return 'Unknown User';
+    return user.empId || user.username || 'Unknown User';
+  }, [user]);
 
   const selectedMeter = useMemo(() => ({
     id: params.id ?? '—',
@@ -126,7 +133,7 @@ export default function ReportScreen() {
         <View style={styles.sheet}>
           <Text style={styles.sectionTitle}>Leak Type</Text>
           <View style={styles.grid2}>
-            {(['Unidentified','Serviceline','Mainline','Others'] as const).map((t) => {
+            {(['Unidentified','Serviceline','Mainline','Early Detection','Others'] as const).map((t) => {
               const isSelected = leakType === t;
               return (
                 <TouchableOpacity key={t} style={[styles.choiceBtn, isSelected && styles.choiceBtnActive]} onPress={() => setLeakType(t)} activeOpacity={0.85}>
@@ -150,17 +157,11 @@ export default function ReportScreen() {
             })}
           </View>
 
-          {/* Contact Person */}
-          <Text style={styles.sectionTitle}>Contact Person</Text>
-          <View style={styles.inputRow}>
-            <Ionicons name="business-outline" size={18} color="#1f3a8a" />
-            <TextInput
-              placeholder="Enter name"
-              style={styles.input}
-              value={contactPerson}
-              onChangeText={setContactPerson}
-              placeholderTextColor="#9ca3af"
-            />
+          {/* Contact Person - Auto-populated from logged-in user */}
+          <Text style={styles.sectionTitle}>Contact Person (Reported By)</Text>
+          <View style={[styles.inputRow, { backgroundColor: '#f3f4f6' }]}>
+            <Ionicons name="person-outline" size={18} color="#1f3a8a" />
+            <Text style={[styles.input, { color: '#374151' }]}>{contactPerson}</Text>
           </View>
 
           {/* Contact Number */}

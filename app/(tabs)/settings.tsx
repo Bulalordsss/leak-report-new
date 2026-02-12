@@ -146,7 +146,7 @@ export default function SettingsScreen() {
           </View>
 
           <View style={{ marginTop: 8 }}>
-            <Row label="Map Status:" value={mapReady ? '✅ Downloaded' : '⬇️ Not Downloaded'} />
+            <Row label="Map Status:" value={mapReady ? 'Downloaded' : 'Not Downloaded'} />
             <Row label="Mode:" value={onlineMaps ? 'Online' : 'Offline'} />
           </View>
 

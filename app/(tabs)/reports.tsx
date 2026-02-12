@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,6 +10,7 @@ import { useSettingsStore } from '@/utils/settingsStore';
 
 export default function NearestMetersScreen() {
   const insets = useSafeAreaInsets();
+  const mapKey = useRef(0);
   
   // Zustand store
   const {
@@ -21,6 +22,7 @@ export default function NearestMetersScreen() {
     isFindingMeters,
     dataStatus,
     setSelectedId,
+    setCenter,
     initialize,
     refreshLocation,
     findNearestMeters,
@@ -42,12 +44,20 @@ export default function NearestMetersScreen() {
 
   // Initialize on mount
   useEffect(() => {
-    initialize();
+    // Use setTimeout to defer initialization and prevent blocking
+    const timer = setTimeout(() => {
+      initialize();
+    }, 100);
+    
+    return () => clearTimeout(timer);
   }, []);
 
   const handleRefreshLocation = async () => {
     const success = await refreshLocation();
-    if (!success) {
+    if (success) {
+      mapKey.current += 1; // Force map re-render with new location
+      Alert.alert('Success', 'Location updated successfully.');
+    } else {
       Alert.alert('Location unavailable', 'Unable to fetch your current location.');
     }
   };
@@ -58,6 +68,16 @@ export default function NearestMetersScreen() {
       return;
     }
     await findNearestMeters();
+  };
+
+  const handleRecenterMap = () => {
+    // Re-center to user location if available
+    if (userLocation) {
+      setCenter(userLocation);
+      mapKey.current += 1; // Force map re-render with new center
+    } else {
+      Alert.alert('Location unavailable', 'Please enable location services.');
+    }
   };
 
   const handleDownloadCustomerData = async () => {
@@ -91,6 +111,7 @@ export default function NearestMetersScreen() {
         {/* Map */}
         <View style={[styles.mapCard, selected && { marginBottom: 12 }]}>
           <LeafletMap
+            key={mapKey.current}
             center={selected ? { lat: selected.lat, lng: selected.lng } : center}
             zoom={16}
             markers={
@@ -102,6 +123,43 @@ export default function NearestMetersScreen() {
             offlineTilesPath={offlineTilesPath}
             style={{ flex: 1, width: '100%' }}
           />
+          
+          {/* Floating action buttons on map */}
+          <View style={styles.fabColumn}>
+            {/* Re-center map button */}
+            <TouchableOpacity 
+              style={styles.fab} 
+              onPress={handleRecenterMap}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="locate" size={20} color="#1f3a8a" />
+            </TouchableOpacity>
+            
+            {/* Refresh location button */}
+            <TouchableOpacity 
+              style={styles.fab} 
+              onPress={handleRefreshLocation}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="refresh-outline" size={20} color="#1f3a8a" />
+            </TouchableOpacity>
+            
+            {/* Reload nearest meters button - only show when meters exist and not selected */}
+            {!selected && meters.length > 0 && (
+              <TouchableOpacity 
+                style={styles.fab} 
+                onPress={handleFindMeters}
+                activeOpacity={0.7}
+                disabled={isFindingMeters}
+              >
+                {isFindingMeters ? (
+                  <ActivityIndicator size="small" color="#1f3a8a" />
+                ) : (
+                  <Ionicons name="sync-outline" size={20} color="#1f3a8a" />
+                )}
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
 
         {/* If a meter is selected, show details sheet; else show selection list */}

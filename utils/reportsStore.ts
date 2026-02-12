@@ -59,6 +59,10 @@ export const useReportsStore = create<ReportsState>((set, get) => ({
   // Initialize app - load customer data count and get location
   initialize: async () => {
     set({ isLoading: true });
+    
+    // Use setTimeout to prevent blocking the UI thread
+    await new Promise(resolve => setTimeout(resolve, 0));
+    
     try {
       // Check if customer data exists
       const data = await loadCustomerData();

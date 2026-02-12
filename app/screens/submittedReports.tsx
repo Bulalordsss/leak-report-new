@@ -51,7 +51,6 @@ export default function SubmittedReportsScreen() {
     loadCachedReports,
     syncAllPending,
     syncReport,
-    removeReport,
     clearSyncedReports,
     getPendingCount,
     getSyncedCount,
@@ -115,21 +114,6 @@ export default function SubmittedReportsScreen() {
     } else {
       Alert.alert('Failed', 'Could not sync report. Please try again.');
     }
-  };
-
-  const handleDelete = (report: CachedLeakReport) => {
-    Alert.alert(
-      'Delete Report',
-      `Delete this ${report.syncStatus === 'synced' ? 'synced' : 'unsynced'} report?\n\nMeter: ${report.meterNumber}`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => removeReport(report.id),
-        },
-      ],
-    );
   };
 
   const handleClearSynced = () => {
@@ -310,13 +294,6 @@ export default function SubmittedReportsScreen() {
                       <Text style={styles.actionBtnText}>Sync</Text>
                     </TouchableOpacity>
                   )}
-                  <TouchableOpacity
-                    style={[styles.actionBtn, styles.deleteBtn]}
-                    onPress={() => handleDelete(report)}
-                  >
-                    <Ionicons name="trash-outline" size={16} color="#ef4444" />
-                    <Text style={[styles.actionBtnText, { color: '#ef4444' }]}>Delete</Text>
-                  </TouchableOpacity>
                 </View>
               </View>
             );

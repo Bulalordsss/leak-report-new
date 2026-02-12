@@ -65,15 +65,27 @@ export interface CachedLeakReport extends LeakReportPayload {
   serverReferenceNumber?: string;
 }
 
-// Map leak type string to ID
-function getLeakTypeId(leakType: string): number {
+// Map leak type string to ID, jmsCode, and reportType based on new requirements
+function getLeakTypeMapping(leakType: string): { leakTypeId: number; jmsCode: string; reportType: string } {
   switch (leakType.toLowerCase()) {
-    case 'serviceline': return 1;
-    case 'mainline': return 2;
-    case 'others': return 3;
-    case 'unidentified':
-    default: return 0;
+    case 'serviceline': 
+      return { leakTypeId: 38, jmsCode: '0100', reportType: '54' };
+    case 'mainline': 
+      return { leakTypeId: 39, jmsCode: '0101', reportType: '55' };
+    case 'unidentified': 
+      return { leakTypeId: 37, jmsCode: '0000', reportType: '' };
+    case 'others': 
+      return { leakTypeId: 40, jmsCode: '0000', reportType: '' };
+    case 'early detection': 
+      return { leakTypeId: 36, jmsCode: '0000', reportType: '' };
+    default: 
+      return { leakTypeId: 37, jmsCode: '0000', reportType: '' }; // Default to Unidentified
   }
+}
+
+// Legacy function for backward compatibility
+function getLeakTypeId(leakType: string): number {
+  return getLeakTypeMapping(leakType).leakTypeId;
 }
 
 // Map location to leak indicator
@@ -199,6 +211,8 @@ export async function submitLeakReportWithFiles(payload: LeakReportPayload): Pro
     
     // Log all field values for debugging
     const referenceRecaddrs = extractReferenceRecaddrs(payload.accountNumber);
+    const leakTypeMapping = getLeakTypeMapping(payload.leakType);
+    
     console.log('[MobileReport API] Payload:', {
       meterNumber: payload.meterNumber,
       accountNumber: payload.accountNumber,
@@ -207,6 +221,9 @@ export async function submitLeakReportWithFiles(payload: LeakReportPayload): Pro
       location: payload.location,
       landmark: payload.landmark?.substring(0, 50),
       leakType: payload.leakType,
+      leakTypeId: leakTypeMapping.leakTypeId,
+      jmsCode: leakTypeMapping.jmsCode,
+      reportType: leakTypeMapping.reportType,
       contactPerson: payload.contactPerson,
       contactNumber: payload.contactNumber,
     });
@@ -216,7 +233,9 @@ export async function submitLeakReportWithFiles(payload: LeakReportPayload): Pro
     formData.append('ReferenceRecaddrs', referenceRecaddrs);  // Extract 6-digit code from account number
     formData.append('ReportedLocation', payload.location || '');
     formData.append('ReportedLandmark', payload.landmark || '');
-    formData.append('LeakTypeId', getLeakTypeId(payload.leakType).toString());
+    formData.append('LeakTypeId', leakTypeMapping.leakTypeId.toString());
+    formData.append('JmsCode', leakTypeMapping.jmsCode);
+    formData.append('ReportType', leakTypeMapping.reportType);
     formData.append('LeakIndicator', getLeakIndicator(payload.location).toString());
     formData.append('ReporterName', payload.contactPerson || '');
     formData.append('ReportedNumber', payload.contactNumber || '');
