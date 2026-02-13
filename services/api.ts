@@ -27,6 +27,9 @@ api.interceptors.response.use(
       await AsyncStorage.removeItem("access_token");
       await AsyncStorage.removeItem("@auth_user");
       router.replace("/login");
+      // Return a never-resolving promise to silently stop the caller
+      // (the user is being redirected, so no point propagating the error)
+      return new Promise(() => {});
     }
     return Promise.reject(error);
   }

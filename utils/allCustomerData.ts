@@ -1,5 +1,6 @@
 import * as SQLite from 'expo-sqlite';
 import { InteractionManager } from 'react-native';
+import { decryptName, isEncrypted } from '@/services/customerInterceptor';
 
 export type Customer = {
   meterNumber: string;
@@ -289,12 +290,20 @@ export async function clearForBatchImport(): Promise<void> {
   throw lastError;
 }
 
-/** Load all customer data from SQLite */
+/** Decrypt the name field of a customer row if it's encrypted */
+function decryptCustomer(c: Customer): Customer {
+  if (c.name && isEncrypted(c.name)) {
+    return { ...c, name: decryptName(c.name) };
+  }
+  return c;
+}
+
+/** Load all customer data from SQLite (decrypts names) */
 export async function loadCustomerData(): Promise<Customer[]> {
   try {
     const db = await getDatabase();
     const result = await db.getAllAsync<Customer>('SELECT meterNumber, accountNumber, address, dma, latitude, longitude, name, wss, connectionClass, status FROM customers');
-    return result;
+    return result.map(decryptCustomer);
   } catch {
     return [];
   }
@@ -328,7 +337,7 @@ export async function getCustomerCount(): Promise<number> {
   }
 }
 
-/** Search customers by meter number or account number */
+/** Search customers by meter number or account number (decrypts names in results) */
 export async function searchCustomers(query: string, limit = 50): Promise<Customer[]> {
   try {
     const db = await getDatabase();
@@ -336,11 +345,11 @@ export async function searchCustomers(query: string, limit = 50): Promise<Custom
     const result = await db.getAllAsync<Customer>(
       `SELECT meterNumber, accountNumber, address, dma, latitude, longitude, name, wss, connectionClass, status 
        FROM customers 
-       WHERE meterNumber LIKE ? OR accountNumber LIKE ? OR address LIKE ? OR name LIKE ?
+       WHERE meterNumber LIKE ? OR accountNumber LIKE ? OR address LIKE ?
        LIMIT ?`,
-      [searchTerm, searchTerm, searchTerm, searchTerm, limit]
+      [searchTerm, searchTerm, searchTerm, limit]
     );
-    return result;
+    return result.map(decryptCustomer);
   } catch {
     return [];
   }

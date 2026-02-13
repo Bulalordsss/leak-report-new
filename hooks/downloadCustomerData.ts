@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { fetchCustomerPage, CustomerApiItem } from '@/services/customerData';
+import { encryptName } from '@/services/customerInterceptor';
 import { 
   Customer, 
   clearForBatchImport, 
@@ -25,6 +26,7 @@ export type DownloadProgress = {
 
 /**
  * Convert API customer item to local Customer format
+ * Encrypts the customer name before storing locally
  */
 function mapApiCustomerToLocal(apiCustomer: CustomerApiItem): Customer {
   return {
@@ -34,7 +36,7 @@ function mapApiCustomerToLocal(apiCustomer: CustomerApiItem): Customer {
     dma: apiCustomer.dma || '',
     latitude: apiCustomer.latitude || 0,
     longitude: apiCustomer.longitude || 0,
-    name: apiCustomer.name || '',
+    name: encryptName(apiCustomer.name || ''),
     wss: apiCustomer.wss || '',
     connectionClass: apiCustomer.connectionClass || '',
     status: apiCustomer.status || '',
