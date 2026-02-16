@@ -27,10 +27,11 @@ export default function ReportScreen() {
 
   const { submitReport, isSubmitting, isOnline, pendingCount } = useLeakReport();
 
-  // Auto-populate contact person from logged-in user (use empId or username)
+  // Auto-populate contact person from logged-in user (use full name)
   const contactPerson = useMemo(() => {
     if (!user) return 'Unknown User';
-    return user.empId || user.username || 'Unknown User';
+    const fullName = `${user.fName || ''} ${user.mName || ''} ${user.lName || ''}`.trim();
+    return fullName || user.username || user.empId || 'Unknown User';
   }, [user]);
 
   const selectedMeter = useMemo(() => ({
