@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { ScrollView, View, Text, TouchableOpacity, StyleSheet, Switch, Alert, ActivityIndicator } from 'react-native';
+import { ScrollView, View, Text, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -11,12 +11,10 @@ export default function SettingsScreen() {
   
   // Zustand store
   const {
-    onlineMaps,
     customerDataStatus,
     customerCount,
     downloading,
     downloadProgress,
-    setOnlineMaps,
     loadOfflineMapPreference,
     checkCustomerData,
     downloadCustomerData,
@@ -44,6 +42,15 @@ export default function SettingsScreen() {
   }, []);
 
   const handleDownloadClientData = async () => {
+    // Prevent downloading if map is being downloaded
+    if (mapDownloading || mapUnzipping) {
+      Alert.alert(
+        'Download in Progress',
+        'Please wait for the map download to complete before downloading customer data.'
+      );
+      return;
+    }
+
     const result = await downloadCustomerData();
     if (result.success) {
       Alert.alert('Success', result.message);
@@ -62,8 +69,16 @@ export default function SettingsScreen() {
           text: 'Clear',
           style: 'destructive',
           onPress: async () => {
-            await clearCustomerDataAction();
-            Alert.alert('Cleared', 'Customer data has been cleared.');
+            try {
+              await clearCustomerDataAction();
+              Alert.alert('Cleared', 'Customer data has been cleared.');
+            } catch (error: any) {
+              console.error('Error in handleClearClientData:', error);
+              Alert.alert(
+                'Error', 
+                error?.message || 'Failed to clear customer data. Please try again.'
+              );
+            }
           },
         },
       ]
@@ -73,6 +88,15 @@ export default function SettingsScreen() {
   // ─── Offline Map handlers ───────────────────────────────────────
 
   const handleDownloadMap = () => {
+    // Prevent downloading if customer data is being downloaded
+    if (downloading) {
+      Alert.alert(
+        'Download in Progress',
+        'Please wait for the customer data download to complete before downloading the map.'
+      );
+      return;
+    }
+
     Alert.alert(
       'Download Map',
       'This will download the offline map. You can continue using the app while it downloads.',
@@ -98,20 +122,17 @@ export default function SettingsScreen() {
           text: 'Clear',
           style: 'destructive',
           onPress: async () => {
-            await clearMapData();
-            Alert.alert('Cleared', 'All offline map data has been removed.');
+            try {
+              await clearMapData();
+              Alert.alert('Cleared', 'All offline map data has been removed.');
+            } catch (error: any) {
+              console.error('Error clearing map data:', error);
+              Alert.alert('Error', error?.message || 'Failed to clear map data. Please try again.');
+            }
           },
         },
       ],
     );
-  };
-
-  const handleViewMap = () => {
-    if (!mapReady) {
-      Alert.alert('Map Not Ready', 'Please download the map first before viewing.', [{ text: 'OK' }]);
-      return;
-    }
-    router.push('/screens/mapViewer' as any);
   };
 
   // Show map error
@@ -140,14 +161,10 @@ export default function SettingsScreen() {
           <View style={styles.cardHeaderRow}>
             <View style={styles.detailIcon}><Ionicons name="map-outline" size={18} color="#1f3a8a" /></View>
             <Text style={styles.sheetTitle}>Offline Maps</Text>
-            <View style={[styles.pillDanger, { marginLeft: 'auto' }]}> 
-              <Text style={styles.pillDangerText}>{onlineMaps ? 'Online Mode' : 'Offline Mode'}</Text>
-            </View>
           </View>
 
           <View style={{ marginTop: 8 }}>
             <Row label="Map Status:" value={mapReady ? 'Downloaded' : 'Not Downloaded'} />
-            <Row label="Mode:" value={onlineMaps ? 'Online' : 'Offline'} />
           </View>
 
           {/* Download / Extraction progress */}
@@ -168,57 +185,39 @@ export default function SettingsScreen() {
             </View>
           )}
 
-          {/* Toggle online/offline - only when map is ready */}
-          {mapReady && !mapDownloading && !mapUnzipping && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 12, justifyContent: 'space-between' }}>
-              <View style={{ flex: 1, marginRight: 12 }}>
-                <Text style={{ color: '#374151', fontWeight: '600' }}>Use Online Maps</Text>
-                <Text style={{ color: '#9ca3af', fontSize: 12, marginTop: 2 }}>
-                  {onlineMaps ? 'Using online map tiles' : 'Using downloaded map tiles'}
-                </Text>
-              </View>
-              <Switch value={onlineMaps} onValueChange={setOnlineMaps} />
-            </View>
-          )}
-
           {/* Action buttons */}
-          {!mapDownloading && !mapUnzipping && (
+          {!mapDownloading && !mapUnzipping && !mapReady && (
             <View style={{ marginTop: 12 }}>
               <TouchableOpacity
-                style={[styles.primaryBtn, (mapDownloading || mapUnzipping) && { opacity: 0.4 }]}
+                style={[styles.primaryBtn, downloading && styles.primaryBtnDisabled]}
                 activeOpacity={0.85}
                 onPress={handleDownloadMap}
-                disabled={mapDownloading || mapUnzipping}
+                disabled={downloading}
               >
                 <Ionicons name="download-outline" size={18} color="#fff" style={{ marginRight: 8 }} />
                 <Text style={styles.primaryBtnText}>
-                  {mapReady ? 'Re-download Map' : 'Download Offline Map'}
+                  {downloading ? 'Download Offline Map (Waiting...)' : 'Download Offline Map'}
                 </Text>
               </TouchableOpacity>
-
-              {mapReady && (
-                <>
-                  <View style={{ height: 8 }} />
-                  <TouchableOpacity
-                    style={styles.viewMapBtn}
-                    activeOpacity={0.85}
-                    onPress={handleViewMap}
-                  >
-                    <Ionicons name="map" size={18} color="#1f3a8a" style={{ marginRight: 8 }} />
-                    <Text style={styles.viewMapBtnText}>View Map</Text>
-                  </TouchableOpacity>
-
-                  <View style={{ height: 8 }} />
-                  <TouchableOpacity
-                    style={styles.clearBtn}
-                    activeOpacity={0.85}
-                    onPress={handleClearMap}
-                  >
-                    <Ionicons name="trash-outline" size={18} color="#ef4444" style={{ marginRight: 8 }} />
-                    <Text style={styles.clearBtnText}>Clear Map Data</Text>
-                  </TouchableOpacity>
-                </>
+              {downloading && (
+                <Text style={styles.waitingText}>
+                  Please wait for customer data download to complete
+                </Text>
               )}
+            </View>
+          )}
+
+          {/* Clear button - only show when map is ready */}
+          {mapReady && !mapDownloading && !mapUnzipping && (
+            <View style={{ marginTop: 12 }}>
+              <TouchableOpacity
+                style={styles.clearBtn}
+                activeOpacity={0.85}
+                onPress={handleClearMap}
+              >
+                <Ionicons name="trash-outline" size={18} color="#ef4444" style={{ marginRight: 8 }} />
+                <Text style={styles.clearBtnText}>Clear Map Data</Text>
+              </TouchableOpacity>
             </View>
           )}
         </View>
@@ -258,7 +257,22 @@ export default function SettingsScreen() {
             </View>
           ) : (
             <>
-              <PrimaryButton title="Download Client Data" onPress={handleDownloadClientData} />
+              <TouchableOpacity 
+                style={[styles.primaryBtn, (mapDownloading || mapUnzipping) && styles.primaryBtnDisabled]} 
+                activeOpacity={0.85} 
+                onPress={handleDownloadClientData}
+                disabled={mapDownloading || mapUnzipping}
+              >
+                <Ionicons name="download-outline" size={18} color="#fff" style={{ marginRight: 8 }} />
+                <Text style={styles.primaryBtnText}>
+                  {(mapDownloading || mapUnzipping) ? 'Download Client Data (Waiting...)' : 'Download Client Data'}
+                </Text>
+              </TouchableOpacity>
+              {(mapDownloading || mapUnzipping) && (
+                <Text style={styles.waitingText}>
+                  Please wait for map download to complete
+                </Text>
+              )}
               {customerDataStatus === 'downloaded' && (
                 <>
                   <View style={{ height: 8 }} />
@@ -279,8 +293,7 @@ export default function SettingsScreen() {
             <Text style={styles.sheetTitle}>General Settings</Text>
           </View>
           <View style={{ marginTop: 8 }}>
-            <Row label="App Version" value="1.0.0" />
-            <Row label="Build Number" value="2024.1" />
+            <Row label="App Version" value="1.3" />
           </View>
         </View>
 
@@ -308,15 +321,6 @@ function Row({ label, value }: { label: string; value: string }) {
       <Text style={styles.itemLabel}>{label}</Text>
       <Text style={styles.itemValue}>{value}</Text>
     </View>
-  );
-}
-
-function PrimaryButton({ title, onPress }: { title: string; onPress: () => void }) {
-  return (
-    <TouchableOpacity style={styles.primaryBtn} activeOpacity={0.85} onPress={onPress}>
-      <Ionicons name="download-outline" size={18} color="#fff" style={{ marginRight: 8 }} />
-      <Text style={styles.primaryBtnText}>{title}</Text>
-    </TouchableOpacity>
   );
 }
 
@@ -389,16 +393,18 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 6 },
   },
-  primaryBtnText: { color: '#fff', fontWeight: '700' },
-
-  pillDanger: {
-    marginLeft: 'auto',
-    backgroundColor: '#FDE7EA',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 16,
+  primaryBtnDisabled: {
+    backgroundColor: '#9ca3af',
+    shadowOpacity: 0,
   },
-  pillDangerText: { color: '#D84A4A', fontWeight: '600' },
+  primaryBtnText: { color: '#fff', fontWeight: '700' },
+  waitingText: {
+    marginTop: 8,
+    fontSize: 12,
+    color: '#6b7280',
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
 
   // New logout button styles
   logoutBtn: {
@@ -469,21 +475,5 @@ const styles = StyleSheet.create({
     color: '#6b7280',
     textAlign: 'right',
     fontWeight: '600',
-  },
-
-  // View map button
-  viewMapBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#eef2ff',
-    borderRadius: 14,
-    paddingVertical: 12,
-    borderWidth: 1,
-    borderColor: '#1f3a8a',
-  },
-  viewMapBtnText: {
-    color: '#1f3a8a',
-    fontWeight: '700',
   },
 });

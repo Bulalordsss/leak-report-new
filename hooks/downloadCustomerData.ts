@@ -57,18 +57,14 @@ export async function fetchAndSaveCustomerData(
 ): Promise<FetchCustomerDataResult> {
   try {
     // Pre-initialize the local database
-    console.log('[CustomerData] Pre-initializing local database...');
     await initializeDatabase();
-    console.log('[CustomerData] Local database ready.');
 
     onProgress?.(0, 100);
 
     // First, get the total count from the first page
-    console.log('[CustomerData] Fetching first page to get total count...');
     const firstPage = await fetchCustomerPage({ pageIndex: 1, pageSize: PAGE_SIZE });
     // Use 'count' field as totalCount seems to always be 0
     const totalCount = firstPage.data.count || firstPage.data.totalCount;
-    console.log(`[CustomerData] Total customers to download: ${totalCount}`);
 
     if (totalCount === 0) {
       return {
@@ -81,7 +77,6 @@ export async function fetchAndSaveCustomerData(
     onProgress?.(5, 100);
 
     // Clear existing data before import
-    console.log('[CustomerData] Clearing existing data...');
     await clearForBatchImport();
 
     onProgress?.(10, 100);
@@ -98,20 +93,15 @@ export async function fetchAndSaveCustomerData(
       const customers = firstPage.data.data.map(mapApiCustomerToLocal);
       pendingInserts.push(...customers);
       totalFetched += customers.length;
-      console.log(`[CustomerData] First page fetched: ${totalFetched}/${totalCount}`);
     }
 
     // Process remaining pages in parallel batches
     if (totalPages > 1) {
       const remainingPages = Array.from({ length: totalPages - 1 }, (_, i) => i + 2);
       
-      console.log(`[CustomerData] Downloading ${remainingPages.length} remaining pages with ${CONCURRENT_REQUESTS} concurrent requests...`);
-      
       // Process pages in parallel batches
       for (let i = 0; i < remainingPages.length; i += CONCURRENT_REQUESTS) {
         const batch = remainingPages.slice(i, i + CONCURRENT_REQUESTS);
-        
-        console.log(`[CustomerData] Fetching pages ${batch[0]}-${batch[batch.length - 1]} in parallel...`);
         
         // Fetch all pages in this batch concurrently
         const pagePromises = batch.map(pageIndex => 
@@ -133,7 +123,6 @@ export async function fetchAndSaveCustomerData(
         // Collect all fetched data
         for (const result of results) {
           if (result.error) {
-            console.error(`[CustomerData] Error fetching page ${result.pageIndex}:`, result.error?.message);
             continue;
           }
           
@@ -143,16 +132,10 @@ export async function fetchAndSaveCustomerData(
           }
         }
 
-        console.log(`[CustomerData] Fetched ${totalFetched}/${totalCount} records. Pending inserts: ${pendingInserts.length}`);
-
         // Insert when batch size reached or last batch
         if (pendingInserts.length >= INSERT_BATCH_SIZE || (i + CONCURRENT_REQUESTS) >= remainingPages.length) {
-          console.log(`[CustomerData] Inserting batch of ${pendingInserts.length} records...`);
-          
           await saveBatchCustomerData(pendingInserts, true);
           totalSaved += pendingInserts.length;
-          
-          console.log(`[CustomerData] Saved ${totalSaved}/${totalCount} records`);
           
           // Clear pending inserts
           pendingInserts = [];
@@ -166,13 +149,11 @@ export async function fetchAndSaveCustomerData(
 
     // Insert any remaining records
     if (pendingInserts.length > 0) {
-      console.log(`[CustomerData] Inserting final batch of ${pendingInserts.length} records...`);
       await saveBatchCustomerData(pendingInserts, true);
       totalSaved += pendingInserts.length;
     }
 
     onProgress?.(100, 100);
-    console.log(`[CustomerData] Download complete! Total records: ${totalSaved}`);
 
     return { 
       success: true, 

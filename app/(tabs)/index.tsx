@@ -2,20 +2,35 @@ import React, { useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { useAuthStore } from '@/utils/authStore';
 import { useDashboardStore } from '@/utils/dashboardStore';
 import { useMobileReportStore } from '@/utils/mobileReportStore';
+import { useDraftReportsStore } from '@/utils/draftReportsStore';
 
 export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
   const user = useAuthStore((s) => s.user);
   const { counts, reports, isLoading, error, fetchDashboard } = useDashboardStore();
   const { cachedReports, loadCachedReports, getPendingCount, getFailedCount } = useMobileReportStore();
+  const { drafts, loadDrafts, getDraftsCount } = useDraftReportsStore();
   const unsyncedCount = getPendingCount() + getFailedCount();
+  const draftCount = getDraftsCount();
+
+  // Reload drafts and cached reports when screen comes into focus
+  useFocusEffect(
+    React.useCallback(() => {
+      loadCachedReports();
+      loadDrafts();
+      if (user?.empId) {
+        fetchDashboard(user.empId);
+      }
+    }, [user?.empId])
+  );
 
   useEffect(() => {
     loadCachedReports();
+    loadDrafts();
     if (user?.empId) {
       fetchDashboard(user.empId);
     }
@@ -67,24 +82,71 @@ export default function DashboardScreen() {
       </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
-        {/* Summary card */}
-        <View style={styles.summaryCard}>
-          <View style={styles.summaryItem}>
-            <Text style={styles.summaryValue}>{cachedReports.length}</Text>
-            <Text style={styles.summaryLabel}>Total</Text>
+        {/* Summary cards in a row */}
+        <View style={styles.summaryRow}>
+          {/* Submitted Reports Summary */}
+          <View style={styles.summaryCardSmall}>
+            <View style={styles.summaryIconWrapper}>
+              <Ionicons name="list-outline" size={24} color="#1f3a8a" />
+            </View>
+            <Text style={styles.summaryValueSmall}>{cachedReports.length}</Text>
+            <Text style={styles.summaryLabelSmall}>Submitted</Text>
+            <View style={styles.subStatsRow}>
+              <View style={styles.subStat}>
+                <Text style={[styles.subStatValue, { color: '#10b981' }]}>
+                  {cachedReports.filter(r => r.syncStatus === 'synced' && r.serverReferenceNumber).length}
+                </Text>
+                <Text style={styles.subStatLabel}>Synced</Text>
+              </View>
+              <View style={styles.subStatDivider} />
+              <View style={styles.subStat}>
+                <Text style={[styles.subStatValue, { color: '#6b7280' }]}>{unsyncedCount}</Text>
+                <Text style={styles.subStatLabel}>Pending</Text>
+              </View>
+            </View>
           </View>
-          <View style={styles.separator} />
-          <View style={styles.summaryItem}>
-            <Text style={[styles.summaryValue, { color: '#10b981' }]}>
-              {cachedReports.filter(r => r.syncStatus === 'synced' && r.serverReferenceNumber).length}
-            </Text>
-            <Text style={styles.summaryLabel}>Synced</Text>
+
+          {/* Draft Reports Summary */}
+          <View style={styles.summaryCardSmall}>
+            <View style={[styles.summaryIconWrapper, { backgroundColor: '#eef2ff' }]}>
+              <Ionicons name="document-outline" size={24} color="#1f3a8a" />
+            </View>
+            <Text style={styles.summaryValueSmall}>{draftCount}</Text>
+            <Text style={styles.summaryLabelSmall}>Drafts</Text>
           </View>
-          <View style={styles.separator} />
-          <View style={styles.summaryItem}>
-            <Text style={[styles.summaryValue, { color: '#6b7280' }]}>{unsyncedCount}</Text>
-            <Text style={styles.summaryLabel}>Not Synced</Text>
-          </View>
+        </View>
+
+        {/* See Submitted Reports button */}
+        <View style={{ marginHorizontal: 16, marginTop: 8 }}>
+          <TouchableOpacity
+            style={styles.seeReportsBtn}
+            activeOpacity={0.85}
+            onPress={() => router.push('/screens/submittedReports' as any)}
+          >
+            <Ionicons name="list-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
+            <Text style={styles.seeReportsBtnText}>See Submitted Reports</Text>
+            {unsyncedCount > 0 && (
+              <View style={styles.unsyncedBadge}>
+                <Text style={styles.unsyncedBadgeText}>{unsyncedCount}</Text>
+              </View>
+            )}
+            <Ionicons name="chevron-forward" size={18} color="#fff" style={{ marginLeft: 'auto' }} />
+          </TouchableOpacity>
+        </View>
+
+        {/* See Draft Reports button */}
+        <View style={{ marginHorizontal: 16, marginTop: 12 }}>
+          <TouchableOpacity
+            style={styles.seeDraftsBtn}
+            activeOpacity={0.85}
+            onPress={() => {
+              router.push('/screens/draftReports' as any);
+            }}
+          >
+            <Ionicons name="document-outline" size={20} color="#1f3a8a" style={{ marginRight: 8 }} />
+            <Text style={styles.seeDraftsBtnText}>See Draft Reports</Text>
+            <Ionicons name="chevron-forward" size={18} color="#1f3a8a" style={{ marginLeft: 'auto' }} />
+          </TouchableOpacity>
         </View>
 
         {/* Loading / Error */}
@@ -105,7 +167,7 @@ export default function DashboardScreen() {
         )}
 
         {/* Recent Activity */}
-        <Text style={styles.sectionTitle}>Recent Activity</Text>
+        <Text style={[styles.sectionTitle, { marginTop: 24 }]}>Recent Activity</Text>
 
         {recentReports.length === 0 && !isLoading ? (
           <View style={styles.emptyState}>
@@ -134,11 +196,13 @@ export default function DashboardScreen() {
 
             // Get leak type label
             const leakTypeLabels: { [key: number]: string } = {
-              36: 'Early Detection',
-              37: 'Unidentified',
               38: 'Serviceline',
               39: 'Mainline',
-              40: 'Others'
+              40: 'Others',
+              61: 'Valve',
+              64: 'Blow-off',
+              65: 'Fire Hydrant',
+              66: 'Air Release'
             };
             const leakTypeLabel = leakTypeLabels[report.leakTypeId] || 'Unknown';
 
@@ -181,26 +245,6 @@ export default function DashboardScreen() {
             );
           })
         )}
-
-        {/* See Submitted Reports button */}
-        <View style={{ marginHorizontal: 16, marginTop: 8 }}>
-          <TouchableOpacity
-            style={styles.seeReportsBtn}
-            activeOpacity={0.85}
-            onPress={() => router.push('/screens/submittedReports' as any)}
-          >
-            <Ionicons name="list-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
-            <Text style={styles.seeReportsBtnText}>
-              See Submitted Reports ({cachedReports.length})
-            </Text>
-            {unsyncedCount > 0 && (
-              <View style={styles.unsyncedBadge}>
-                <Text style={styles.unsyncedBadgeText}>{unsyncedCount}</Text>
-              </View>
-            )}
-            <Ionicons name="chevron-forward" size={18} color="#fff" style={{ marginLeft: 'auto' }} />
-          </TouchableOpacity>
-        </View>
 
         <View style={{ height: 16 }} />
       </ScrollView>
@@ -264,6 +308,77 @@ const styles = StyleSheet.create({
   summaryValue: { fontSize: 24, fontWeight: '700', color: '#111827' },
   summaryLabel: { color: '#6b7280', marginTop: 4 },
   separator: { width: 1, backgroundColor: '#e5e7eb', marginHorizontal: 12 },
+  
+  // New summary card styles for side-by-side layout
+  summaryRow: {
+    flexDirection: 'row',
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 20,
+    gap: 12,
+  },
+  summaryCardSmall: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 2,
+    alignItems: 'center',
+  },
+  summaryIconWrapper: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#dbeafe',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  summaryValueSmall: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 4,
+  },
+  summaryLabelSmall: {
+    fontSize: 13,
+    color: '#6b7280',
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  subStatsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  subStat: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  subStatValue: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  subStatLabel: {
+    fontSize: 10,
+    color: '#9ca3af',
+    marginTop: 2,
+  },
+  subStatDivider: {
+    width: 1,
+    height: 20,
+    backgroundColor: '#e5e7eb',
+    marginHorizontal: 8,
+  },
+  draftSubtext: {
+    fontSize: 11,
+    color: '#9ca3af',
+    marginTop: 4,
+  },
 
   statusRow: {
     flexDirection: 'row',
@@ -318,6 +433,22 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
   },
   seeReportsBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  seeDraftsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderWidth: 1.5,
+    borderColor: '#1f3a8a',
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  seeDraftsBtnText: { color: '#1f3a8a', fontWeight: '700', fontSize: 15 },
   unsyncedBadge: {
     backgroundColor: '#ef4444',
     borderRadius: 10,

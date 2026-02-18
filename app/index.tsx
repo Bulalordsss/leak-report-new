@@ -1,6 +1,6 @@
 import { Redirect } from 'expo-router';
 
 export default function Index() {
-  // Layout handles token checking, just redirect to tabs
-  return <Redirect href="/(tabs)" />;
+  // Redirect to splash screen for initialization
+  return <Redirect href="/screens/splashLoading" />;
 }

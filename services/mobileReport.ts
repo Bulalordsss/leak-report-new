@@ -72,14 +72,20 @@ function getLeakTypeMapping(leakType: string): { leakTypeId: number; jmsCode: st
       return { leakTypeId: 38, jmsCode: '0100', reportType: '54' };
     case 'mainline': 
       return { leakTypeId: 39, jmsCode: '0101', reportType: '55' };
-    case 'unidentified': 
-      return { leakTypeId: 37, jmsCode: '0000', reportType: '' };
     case 'others': 
       return { leakTypeId: 40, jmsCode: '0000', reportType: '' };
-    case 'early detection': 
-      return { leakTypeId: 36, jmsCode: '0000', reportType: '' };
+    case 'blow-off':
+    case 'blow-off valve':
+      return { leakTypeId: 64, jmsCode: '0000', reportType: '' };
+    case 'fire hydrant':
+      return { leakTypeId: 65, jmsCode: '0000', reportType: '' };
+    case 'air release':
+    case 'air release valve':
+      return { leakTypeId: 66, jmsCode: '0000', reportType: '' };
+    case 'valve':
+      return { leakTypeId: 61, jmsCode: '0000', reportType: '' };
     default: 
-      return { leakTypeId: 37, jmsCode: '0000', reportType: '' }; // Default to Unidentified
+      return { leakTypeId: 40, jmsCode: '0000', reportType: '' }; // Default to Others
   }
 }
 

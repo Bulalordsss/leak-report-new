@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, ActivityIndicator } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, ActivityIndicator, Modal } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -8,11 +8,13 @@ import Upload from '@/components/ui/upload';
 import { useReportForm } from '@/utils/reportFormStore';
 import { useLeakReport, createLeakReportPayload } from '@/hooks/mobileReportLeak';
 import { useAuthStore } from '@/utils/authStore';
+import { useDraftReportsStore } from '@/utils/draftReportsStore';
 
 export default function ReportScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ id?: string; address?: string; account?: string; dma?: string; coords?: string }>();
   const { user } = useAuthStore();
+  const [showLeakTypeDropdown, setShowLeakTypeDropdown] = useState(false);
 
   const {
     leakType, setLeakType,
@@ -26,6 +28,18 @@ export default function ReportScreen() {
   } = useReportForm();
 
   const { submitReport, isSubmitting, isOnline, pendingCount } = useLeakReport();
+  const { saveDraft: saveDraftToStore } = useDraftReportsStore();
+
+  // Leak type options with proper display names
+  const leakTypeOptions = [
+    { value: 'Serviceline', label: '38 – Serviceline' },
+    { value: 'Mainline', label: '39 – Mainline' },
+    { value: 'Others', label: '40 – Others' },
+    { value: 'Blow-off', label: '64 – Blow-off' },
+    { value: 'Fire Hydrant', label: '65 – Fire Hydrant' },
+    { value: 'Air Release', label: '66 – Air Release' },
+    { value: 'Valve', label: '61 – Valve' },
+  ];
 
   // Auto-populate contact person from logged-in user (use full name)
   const contactPerson = useMemo(() => {
@@ -50,6 +64,22 @@ export default function ReportScreen() {
     }
     if (!location) {
       Alert.alert('Missing Information', 'Please select a location type.');
+      return;
+    }
+    if (!contactNumber) {
+      Alert.alert('Missing Information', 'Please enter a contact number.');
+      return;
+    }
+    if (!landmark) {
+      Alert.alert('Missing Information', 'Please enter a landmark.');
+      return;
+    }
+    if (!leakPhotos || leakPhotos.length === 0) {
+      Alert.alert('Missing Information', 'Please add at least one leak photo.');
+      return;
+    }
+    if (!landmarkPhotos || landmarkPhotos.length === 0) {
+      Alert.alert('Missing Information', 'Please add a landmark photo.');
       return;
     }
 
@@ -79,7 +109,33 @@ export default function ReportScreen() {
     } else {
       Alert.alert('Error', result.message);
     }
-  };  return (
+  };
+
+  const saveDraft = async () => {
+    try {
+      await saveDraftToStore({
+        meterNumber: selectedMeter.id,
+        accountNumber: selectedMeter.account,
+        address: selectedMeter.address,
+        dma: selectedMeter.dma,
+        coordinates: selectedMeter.coords,
+        leakType: leakType,
+        location: location,
+        contactPerson: contactPerson,
+        contactNumber: contactNumber,
+        landmark: landmark,
+        leakPhotos: leakPhotos,
+        landmarkPhotos: landmarkPhotos,
+      });
+      Alert.alert('Draft Saved', 'Your report has been saved as a draft.', [
+        { text: 'OK', onPress: () => { reset(); router.back(); } }
+      ]);
+    } catch (error) {
+      Alert.alert('Error', 'Failed to save draft. Please try again.');
+    }
+  };
+
+  return (
     <View style={styles.page}>
       {/* Header */}
       <View style={[styles.header, { paddingTop: Math.max(insets.top, 12) }]}> 
@@ -114,14 +170,6 @@ export default function ReportScreen() {
               <Text style={styles.detailValue}>{selectedMeter.address}</Text>
             </View>
           </View>
-
-          <View style={styles.detailRow}>
-            <View style={styles.detailIcon}><Ionicons name="pin-outline" size={18} color="#1f3a8a" /></View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.detailLabel}>Coordinates</Text>
-              <Text style={styles.detailValue}>{selectedMeter.coords}</Text>
-            </View>
-          </View>
         </View>
 
         {/* Info note */}
@@ -132,20 +180,32 @@ export default function ReportScreen() {
 
         {/* Leak Type */}
         <View style={styles.sheet}>
-          <Text style={styles.sectionTitle}>Leak Type</Text>
-          <View style={styles.grid2}>
-            {(['Unidentified','Serviceline','Mainline','Early Detection','Others'] as const).map((t) => {
-              const isSelected = leakType === t;
-              return (
-                <TouchableOpacity key={t} style={[styles.choiceBtn, isSelected && styles.choiceBtnActive]} onPress={() => setLeakType(t)} activeOpacity={0.85}>
-                  <Text style={[styles.choiceLabel, isSelected && styles.choiceLabelActive]}>{t}</Text>
-                  {isSelected && <Ionicons name="checkmark-circle" size={16} color="#fff" style={{ marginLeft: 6 }} />}
-                </TouchableOpacity>
-              );
-            })}
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Text style={styles.sectionTitle}>Leak Type</Text>
+            <Text style={styles.asterisk}> *</Text>
           </View>
+          
+          {/* Dropdown for Leak Type */}
+          <TouchableOpacity 
+            style={styles.dropdownButton} 
+            onPress={() => setShowLeakTypeDropdown(true)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="water-outline" size={18} color="#1f3a8a" />
+            <Text style={[styles.dropdownText, !leakType && styles.dropdownPlaceholder]}>
+              {leakType 
+                ? leakTypeOptions.find(opt => opt.value === leakType)?.label || leakType
+                : 'Select leak type'
+              }
+            </Text>
+            <Ionicons name="chevron-down" size={20} color="#6b7280" />
+          </TouchableOpacity>
+
           {/* Location */}
-          <Text style={[styles.sectionTitle, { marginTop: 12 }]}>Location</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 12 }}>
+            <Text style={styles.sectionTitle}>Location (Leak Indicator)</Text>
+            <Text style={styles.asterisk}> *</Text>
+          </View>
           <View style={{ flexDirection: 'row', gap: 12 }}>
             {(['Surface','Non-Surface'] as const).map((t) => {
               const isSelected = location === t;
@@ -159,14 +219,20 @@ export default function ReportScreen() {
           </View>
 
           {/* Contact Person - Auto-populated from logged-in user */}
-          <Text style={styles.sectionTitle}>Contact Person (Reported By)</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 12 }}>
+            <Text style={styles.sectionTitle}>Contact Person (Reported By)</Text>
+            <Text style={styles.asterisk}> *</Text>
+          </View>
           <View style={[styles.inputRow, { backgroundColor: '#f3f4f6' }]}>
             <Ionicons name="person-outline" size={18} color="#1f3a8a" />
             <Text style={[styles.input, { color: '#374151' }]}>{contactPerson}</Text>
           </View>
 
           {/* Contact Number */}
-          <Text style={styles.sectionTitle}>Contact Number</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 12 }}>
+            <Text style={styles.sectionTitle}>Contact Number</Text>
+            <Text style={styles.asterisk}> *</Text>
+          </View>
           <View style={styles.inputRow}>
             <Ionicons name="call-outline" size={18} color="#1f3a8a" />
             <TextInput
@@ -180,7 +246,10 @@ export default function ReportScreen() {
           </View>
 
           {/* Reported Landmark */}
-          <Text style={styles.sectionTitle}>Reported Landmark</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 12 }}>
+            <Text style={styles.sectionTitle}>Reported Landmark</Text>
+            <Text style={styles.asterisk}> *</Text>
+          </View>
           <View style={styles.inputRow}>
             <Ionicons name="location" size={18} color="#1f3a8a" />
             <TextInput
@@ -200,12 +269,20 @@ export default function ReportScreen() {
 
           {/* Leak Photos */}
           <View style={{ marginTop: 8 }}>
-            <Upload title="Leak Photos (2 only)" max={2} value={leakPhotos} onChange={setLeakPhotos} />
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+              <Text style={{ color: '#111827', fontWeight: '600', fontSize: 14 }}>Leak Photos (2 only)</Text>
+              <Text style={styles.asterisk}> *</Text>
+            </View>
+            <Upload title="" max={2} value={leakPhotos} onChange={setLeakPhotos} />
           </View>
 
           {/* Landmark Photo */}
           <View style={{ marginTop: 12 }}>
-            <Upload title="Landmark Photo" max={1} value={landmarkPhotos} onChange={setLandmarkPhotos} />
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+              <Text style={{ color: '#111827', fontWeight: '600', fontSize: 14 }}>Landmark Photo</Text>
+              <Text style={styles.asterisk}> *</Text>
+            </View>
+            <Upload title="" max={1} value={landmarkPhotos} onChange={setLandmarkPhotos} />
           </View>
         </View>
         {/* Footer note + submit */}
@@ -247,12 +324,73 @@ export default function ReportScreen() {
               <Text style={styles.reportBtnText}>Send Report</Text>
             )}
           </TouchableOpacity>
+          
+          {/* Save Draft button */}
+          <TouchableOpacity 
+            style={styles.draftBtn} 
+            activeOpacity={0.9} 
+            onPress={saveDraft}
+            disabled={isSubmitting}
+          >
+            <Ionicons name="save-outline" size={18} color="#1f3a8a" style={{ marginRight: 8 }} />
+            <Text style={styles.draftBtnText}>Save Draft</Text>
+          </TouchableOpacity>
+
           {/* Clear form button */}
           <TouchableOpacity style={styles.clearBtn} activeOpacity={0.9} onPress={reset} disabled={isSubmitting}>
             <Text style={styles.clearBtnText}>Clear Form</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      {/* Leak Type Dropdown Modal */}
+      <Modal
+        visible={showLeakTypeDropdown}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowLeakTypeDropdown(false)}
+      >
+        <TouchableOpacity 
+          style={styles.modalOverlay} 
+          activeOpacity={1} 
+          onPress={() => setShowLeakTypeDropdown(false)}
+        >
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Leak Type</Text>
+              <TouchableOpacity onPress={() => setShowLeakTypeDropdown(false)}>
+                <Ionicons name="close" size={24} color="#6b7280" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.modalList}>
+              {leakTypeOptions.map((option) => (
+                <TouchableOpacity
+                  key={option.value}
+                  style={[
+                    styles.modalItem,
+                    leakType === option.value && styles.modalItemSelected
+                  ]}
+                  onPress={() => {
+                    setLeakType(option.value as any);
+                    setShowLeakTypeDropdown(false);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[
+                    styles.modalItemText,
+                    leakType === option.value && styles.modalItemTextSelected
+                  ]}>
+                    {option.label}
+                  </Text>
+                  {leakType === option.value && (
+                    <Ionicons name="checkmark" size={20} color="#1f3a8a" />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -382,6 +520,18 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   reportBtnText: { color: '#fff', fontWeight: '700' },
+  draftBtn: {
+    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 14,
+    paddingVertical: 12,
+    backgroundColor: '#eef2ff',
+    borderWidth: 1,
+    borderColor: '#1f3a8a',
+  },
+  draftBtnText: { color: '#1f3a8a', fontWeight: '700' },
   clearBtn: {
     marginTop: 10,
     alignItems: 'center',
@@ -393,4 +543,96 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
   },
   clearBtnText: { color: '#111827', fontWeight: '700' },
+  
+  // Red asterisk for required fields
+  asterisk: {
+    color: '#ef4444',
+    fontSize: 16,
+    fontWeight: '700',
+    marginLeft: 2,
+  },
+  
+  // Dropdown button styles
+  dropdownButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f9fafb',
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    gap: 10,
+  },
+  dropdownText: {
+    flex: 1,
+    color: '#111827',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  dropdownPlaceholder: {
+    color: '#9ca3af',
+    fontWeight: '400',
+  },
+  
+  // Modal styles for dropdown
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    width: '100%',
+    maxWidth: 400,
+    maxHeight: '70%',
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 10,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  modalList: {
+    padding: 10,
+  },
+  modalItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    borderRadius: 12,
+    marginVertical: 4,
+    backgroundColor: '#f9fafb',
+  },
+  modalItemSelected: {
+    backgroundColor: '#eef2ff',
+    borderWidth: 1,
+    borderColor: '#1f3a8a',
+  },
+  modalItemText: {
+    fontSize: 15,
+    color: '#374151',
+    fontWeight: '500',
+  },
+  modalItemTextSelected: {
+    color: '#1f3a8a',
+    fontWeight: '700',
+  },
 });

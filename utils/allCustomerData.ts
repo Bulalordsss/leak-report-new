@@ -309,10 +309,63 @@ export async function loadCustomerData(): Promise<Customer[]> {
   }
 }
 
-/** Clear all customer data from SQLite */
+/** Clear all customer data by deleting and recreating the database */
 export async function clearCustomerData(): Promise<void> {
-  const db = await getDatabase();
-  await db.runAsync('DELETE FROM customers');
+  console.log('[clearCustomerData] Starting clear operation...');
+  
+  try {
+    // Step 1: Close the existing database connection
+    if (dbInstance) {
+      console.log('[clearCustomerData] Closing existing database connection...');
+      try {
+        await dbInstance.closeAsync();
+        console.log('[clearCustomerData] Database closed');
+      } catch (closeError: any) {
+        console.warn('[clearCustomerData] Error closing database:', closeError?.message);
+      }
+      
+      // Clear the instances
+      dbInstance = null;
+      initPromise = null;
+    }
+    
+    // Step 2: Wait for resources to be released
+    console.log('[clearCustomerData] Waiting for resources to be released...');
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // Step 3: Delete the database file entirely (this releases ALL locks)
+    console.log('[clearCustomerData] Deleting database file...');
+    try {
+      await SQLite.deleteDatabaseAsync(DB_NAME);
+      console.log('[clearCustomerData] Database file deleted successfully');
+    } catch (deleteError: any) {
+      console.warn('[clearCustomerData] Error deleting database file:', deleteError?.message);
+      // Continue anyway - the file might not exist
+    }
+    
+    // Step 4: Wait a moment after deletion
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    // Step 5: Reinitialize the database (creates new file with empty table)
+    console.log('[clearCustomerData] Recreating database...');
+    const db = await getDatabase();
+    
+    console.log('[clearCustomerData] ✓ Successfully cleared all customer data');
+  } catch (error: any) {
+    console.error('[clearCustomerData] ✗ Failed to clear data:', error?.message);
+    
+    // Ensure database is reopened even if clear failed
+    if (!dbInstance) {
+      console.log('[clearCustomerData] Attempting to reopen database after error...');
+      try {
+        await getDatabase();
+      } catch (reopenError) {
+        console.error('[clearCustomerData] Failed to reopen database:', reopenError);
+      }
+    }
+    
+    throw error;
+  }
 }
 
 /** Check if customer data exists */

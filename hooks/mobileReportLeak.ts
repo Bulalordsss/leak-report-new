@@ -94,6 +94,16 @@ export function useLeakReport(options: UseLeakReportOptions = {}) {
   const submitReport = useCallback(async (
     payload: LeakReportPayload
   ): Promise<SubmitResult> => {
+    // Prevent multiple simultaneous submissions
+    if (isSubmitting) {
+      console.log('[useLeakReport] Submission already in progress, ignoring request');
+      return {
+        success: false,
+        cached: false,
+        message: 'Submission already in progress. Please wait.',
+      };
+    }
+    
     setIsSubmitting(true);
     
     try {

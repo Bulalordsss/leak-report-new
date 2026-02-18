@@ -56,7 +56,6 @@ function xorProcess(input: string): string {
 export function encryptName(plainName: string): string {
   if (!plainName) return '';
   const encrypted = stringToHex(xorProcess(plainName));
-  console.log('[Encryption] Plain:', plainName, '→ Encrypted:', encrypted.substring(0, 40) + '...');
   return encrypted;
 }
 

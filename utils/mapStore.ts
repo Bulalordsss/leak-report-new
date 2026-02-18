@@ -52,6 +52,18 @@ export const useMapStore = create<MapState>((set, get) => ({
   },
 
   initializeMap: async (mapUrl = MAP_URL) => {
+    const state = get();
+    
+    // Prevent multiple simultaneous downloads
+    if (state.isDownloading || state.isUnzipping) {
+      console.log('[MapStore] Map operation already in progress, ignoring request');
+      set({ 
+        error: 'Map download already in progress. Please wait.',
+        statusMessage: 'Download already in progress...',
+      });
+      return;
+    }
+    
     try {
       set({
         error: null,

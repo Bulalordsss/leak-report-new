@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -31,26 +31,23 @@ export default function NearestMetersScreen() {
   // Offline map state
   const mapReady = useMapStore((s) => s.isReady);
   const mapTilesPath = useMapStore((s) => s.mapTilesPath);
-  const onlineMaps = useSettingsStore((s) => s.onlineMaps);
-  const offlineTilesPath = mapReady && !onlineMaps ? mapTilesPath : null;
-
-  // Customer data download state
-  const downloading = useSettingsStore((s) => s.downloading);
-  const downloadProgress = useSettingsStore((s) => s.downloadProgress);
-  const downloadCustomerData = useSettingsStore((s) => s.downloadCustomerData);
+  const offlineTilesPath = mapReady ? mapTilesPath : null;
 
   // Compute selected meter from subscribed state (this ensures re-render when selectedId changes)
   const selected = selectedId ? meters.find(m => m.id === selectedId) || null : null;
 
-  // Initialize on mount
+  // Initialize on mount only if not already initialized
+  // The splash screen should have already initialized the store
   useEffect(() => {
-    // Use setTimeout to defer initialization and prevent blocking
-    const timer = setTimeout(() => {
-      initialize();
-    }, 100);
-    
-    return () => clearTimeout(timer);
-  }, []);
+    // Only initialize if data status is still loading (meaning splash didn't complete it)
+    if (dataStatus === 'loading') {
+      const timer = setTimeout(() => {
+        initialize();
+      }, 100);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [dataStatus]);
 
   const handleRefreshLocation = async () => {
     const success = await refreshLocation();
@@ -80,15 +77,15 @@ export default function NearestMetersScreen() {
     }
   };
 
-  const handleDownloadCustomerData = async () => {
-    const result = await downloadCustomerData();
-    if (result.success) {
-      Alert.alert('Success', result.message, [
-        { text: 'OK', onPress: () => initialize() },
-      ]);
-    } else {
-      Alert.alert('Error', result.message);
-    }
+  const handleLoadCustomerData = () => {
+    Alert.alert(
+      'Load Customer Data',
+      'Please go to Settings screen to download customer data.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Go to Settings', onPress: () => router.push('/(tabs)/settings') }
+      ]
+    );
   };
 
   return (
@@ -106,62 +103,66 @@ export default function NearestMetersScreen() {
         </View>
       </View>
 
-      {/* Make screen non-scrollable */}
-      <View style={{ paddingBottom: 24 }}>
-        {/* Map */}
-        <View style={[styles.mapCard, selected && { marginBottom: 12 }]}>
-          <LeafletMap
-            key={mapKey.current}
-            center={selected ? { lat: selected.lat, lng: selected.lng } : center}
-            zoom={16}
-            markers={
-              selected 
-                ? [{ id: selected.id, position: { lat: selected.lat, lng: selected.lng }, title: selected.title }]
-                : meters.map(m => ({ id: m.id, position: { lat: m.lat, lng: m.lng }, title: `#${m.rank} ${m.id}` }))
-            }
-            userLocation={userLocation ?? undefined}
-            offlineTilesPath={offlineTilesPath}
-            style={{ flex: 1, width: '100%' }}
-          />
+      {/* Map - Fixed at top */}
+      <View style={[styles.mapCard, selected && { marginBottom: 0 }]}>
+        <LeafletMap
+          key={mapKey.current}
+          center={selected ? { lat: selected.lat, lng: selected.lng } : center}
+          zoom={16}
+          markers={
+            selected 
+              ? [{ id: selected.id, position: { lat: selected.lat, lng: selected.lng }, title: selected.title }]
+              : meters.map(m => ({ id: m.id, position: { lat: m.lat, lng: m.lng }, title: `#${m.rank} ${m.id}` }))
+          }
+          userLocation={userLocation ?? undefined}
+          offlineTilesPath={offlineTilesPath}
+          style={{ flex: 1, width: '100%' }}
+        />
+        
+        {/* Floating action buttons on map */}
+        <View style={styles.fabColumn}>
+          {/* Re-center map button */}
+          <TouchableOpacity 
+            style={styles.fab} 
+            onPress={handleRecenterMap}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="locate" size={20} color="#1f3a8a" />
+          </TouchableOpacity>
           
-          {/* Floating action buttons on map */}
-          <View style={styles.fabColumn}>
-            {/* Re-center map button */}
+          {/* Refresh location button */}
+          <TouchableOpacity 
+            style={styles.fab} 
+            onPress={handleRefreshLocation}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="refresh-outline" size={20} color="#1f3a8a" />
+          </TouchableOpacity>
+          
+          {/* Reload nearest meters button - only show when meters exist and not selected */}
+          {!selected && meters.length > 0 && (
             <TouchableOpacity 
               style={styles.fab} 
-              onPress={handleRecenterMap}
+              onPress={handleFindMeters}
               activeOpacity={0.7}
+              disabled={isFindingMeters}
             >
-              <Ionicons name="locate" size={20} color="#1f3a8a" />
+              {isFindingMeters ? (
+                <ActivityIndicator size="small" color="#1f3a8a" />
+              ) : (
+                <Ionicons name="sync-outline" size={20} color="#1f3a8a" />
+              )}
             </TouchableOpacity>
-            
-            {/* Refresh location button */}
-            <TouchableOpacity 
-              style={styles.fab} 
-              onPress={handleRefreshLocation}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="refresh-outline" size={20} color="#1f3a8a" />
-            </TouchableOpacity>
-            
-            {/* Reload nearest meters button - only show when meters exist and not selected */}
-            {!selected && meters.length > 0 && (
-              <TouchableOpacity 
-                style={styles.fab} 
-                onPress={handleFindMeters}
-                activeOpacity={0.7}
-                disabled={isFindingMeters}
-              >
-                {isFindingMeters ? (
-                  <ActivityIndicator size="small" color="#1f3a8a" />
-                ) : (
-                  <Ionicons name="sync-outline" size={20} color="#1f3a8a" />
-                )}
-              </TouchableOpacity>
-            )}
-          </View>
+          )}
         </View>
+      </View>
 
+      {/* Scrollable content below map */}
+      <ScrollView 
+        style={styles.scrollContainer}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={true}
+      >
         {/* If a meter is selected, show details sheet; else show selection list */}
         {selected ? (
           <View style={styles.sheet}>
@@ -232,22 +233,11 @@ export default function NearestMetersScreen() {
               <View style={styles.emptyContainer}>
                 <Ionicons name="alert-circle-outline" size={48} color="#f59e0b" />
                 <Text style={styles.emptyTitle}>No Customer Data</Text>
-                <Text style={styles.emptyText}>Download customer data to find nearby meters.</Text>
-                {downloading ? (
-                  <View style={styles.downloadingRow}>
-                    <ActivityIndicator size="small" color="#1f3a8a" />
-                    <Text style={styles.downloadingText}>
-                      Downloading... {downloadProgress.total > 0
-                        ? `${downloadProgress.current.toLocaleString()} / ${downloadProgress.total.toLocaleString()}`
-                        : ''}
-                    </Text>
-                  </View>
-                ) : (
-                  <TouchableOpacity style={styles.loadBtn} onPress={handleDownloadCustomerData}>
-                    <Ionicons name="cloud-download-outline" size={18} color="#fff" style={{ marginRight: 8 }} />
-                    <Text style={styles.loadBtnText}>Download Customer Data</Text>
-                  </TouchableOpacity>
-                )}
+                <Text style={styles.emptyText}>Load customer data from Settings to find nearby meters.</Text>
+                <TouchableOpacity style={styles.loadBtn} onPress={handleLoadCustomerData}>
+                  <Ionicons name="settings-outline" size={18} color="#fff" style={{ marginRight: 8 }} />
+                  <Text style={styles.loadBtnText}>Load Customer Data</Text>
+                </TouchableOpacity>
               </View>
             ) : meters.length === 0 ? (
               <View style={styles.emptyContainer}>
@@ -306,8 +296,7 @@ export default function NearestMetersScreen() {
           </View>
         )}
 
-        <View style={{ height: 12 }} />
-      </View>
+      </ScrollView>
     </View>
   );
 }
@@ -335,7 +324,8 @@ const styles = StyleSheet.create({
   mapCard: {
     height: 240,
     backgroundColor: '#fff',
-    margin: 16,
+    marginHorizontal: 16,
+    marginTop: 16,
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
@@ -345,6 +335,13 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
     elevation: 2,
     overflow: 'hidden',
+  },
+  scrollContainer: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingTop: 12,
+    paddingBottom: 24,
   },
   fabColumn: {
     position: 'absolute',
@@ -483,16 +480,5 @@ const styles = StyleSheet.create({
     color: '#fff', 
     fontWeight: '700',
     fontSize: 15,
-  },
-  downloadingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 16,
-    gap: 8,
-  },
-  downloadingText: {
-    color: '#1f3a8a',
-    fontWeight: '600',
-    fontSize: 14,
   },
 });

@@ -63,21 +63,12 @@ export async function fetchCustomerPage(params: FetchCustomerPageParams = {}): P
   if (sortBy) queryParams.append('SortBy', sortBy);
 
   const url = `/dcwd-gis/api/v1/admin/customer/paginate?${queryParams.toString()}`;
-  console.log('[CustomerData API] Fetching:', url);
 
   try {
     const response = await api.get<CustomerPaginateResponse>(url);
-    console.log('[CustomerData API] Response status:', response.status);
-    console.log('[CustomerData API] Total count:', response.data?.data?.count, '| Page data length:', response.data?.data?.data?.length);
     return response.data;
   } catch (error: any) {
-    console.error('[CustomerData API] Error details:', {
-      url,
-      status: error?.response?.status,
-      statusText: error?.response?.statusText,
-      data: error?.response?.data,
-      message: error?.message,
-    });
+    console.error('[CustomerData API] Error:', error?.message);
     throw error;
   }
 }

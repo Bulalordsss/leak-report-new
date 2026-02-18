@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { fetchAndSaveCustomerData } from '@/hooks/downloadCustomerData';
-import { hasCustomerData, loadCustomerData, clearCustomerData } from '@/utils/allCustomerData';
+import { hasCustomerData, getCustomerCount, clearCustomerData } from '@/utils/allCustomerData';
 
 const OFFLINE_MAP_KEY = '@offline_map_enabled';
 
@@ -69,9 +69,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     try {
       const exists = await hasCustomerData();
       if (exists) {
-        const data = await loadCustomerData();
+        // Use getCustomerCount to avoid loading all data into memory
+        const count = await getCustomerCount();
+        
         set({ 
-          customerCount: data.length,
+          customerCount: count,
           customerDataStatus: 'downloaded',
         });
       } else {
@@ -85,6 +87,17 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   
   // Download customer data
   downloadCustomerData: async () => {
+    const state = get();
+    
+    // Prevent multiple simultaneous downloads
+    if (state.downloading) {
+      console.log('[SettingsStore] Download already in progress, ignoring request');
+      return { 
+        success: false, 
+        message: 'Download already in progress. Please wait.',
+      };
+    }
+    
     set({ 
       downloading: true,
       downloadProgress: { current: 0, total: 0 },
@@ -123,20 +136,31 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   
   // Clear customer data
   clearCustomerDataAction: async () => {
+    const state = get();
+    
     // Don't allow clearing while downloading
-    if (get().downloading) {
-      console.log('Cannot clear customer data while download is in progress');
-      return;
+    if (state.downloading) {
+      throw new Error('Cannot clear while download is in progress. Please wait for the download to finish.');
     }
     
+    // Set status to prevent other operations during clear
+    const previousStatus = state.customerDataStatus;
+    set({ customerDataStatus: 'checking' });
+    
     try {
+      console.log('[SettingsStore] Clearing customer data...');
       await clearCustomerData();
+      console.log('[SettingsStore] ✓ Customer data cleared successfully');
+      
       set({ 
         customerDataStatus: 'not_downloaded',
         customerCount: 0,
       });
-    } catch (error) {
-      console.error('Error clearing customer data:', error);
+    } catch (error: any) {
+      console.error('[SettingsStore] ✗ Error clearing customer data:', error?.message || error);
+      // Reset status on error
+      set({ customerDataStatus: previousStatus });
+      throw error;
     }
   },
 }));

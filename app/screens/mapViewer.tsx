@@ -5,12 +5,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import MapViewer from '@/components/ui/mapOffline';
 import { useMapStore } from '@/utils/mapStore';
-import { useSettingsStore } from '@/utils/settingsStore';
 
 export default function MapViewerScreen() {
   const insets = useSafeAreaInsets();
   const mapTilesPath = useMapStore((s) => s.mapTilesPath);
-  const onlineMaps = useSettingsStore((s) => s.onlineMaps);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -26,7 +24,7 @@ export default function MapViewerScreen() {
 
       <MapViewer
         tilesPath={mapTilesPath}
-        useOfflineMap={!onlineMaps}
+        useOfflineMap={true}
       />
     </SafeAreaView>
   );

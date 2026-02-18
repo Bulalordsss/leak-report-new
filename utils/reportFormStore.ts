@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type LeakType = 'Unidentified' | 'Serviceline' | 'Mainline' | 'Early Detection' | 'Others' | null;
+export type LeakType = 'Serviceline' | 'Mainline' | 'Others' | 'Blow-off' | 'Fire Hydrant' | 'Air Release' | 'Valve' | null;
 export type LocationType = 'Surface' | 'Non-Surface' | null;
 
 type ReportFormState = {
