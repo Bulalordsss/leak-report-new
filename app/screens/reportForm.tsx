@@ -41,15 +41,15 @@ export default function ReportScreen() {
   const isEditingDraft = !!params.draftId;
 
   // Leak type options with user-friendly display names (IDs are hidden from users)
-  const leakTypeOptions = [
-    { value: 'Serviceline', label: 'Serviceline' },
-    { value: 'Mainline', label: 'Mainline' },
-    { value: 'Others', label: 'Others' },
-    { value: 'Blow-off', label: 'Blow-off' },
-    { value: 'Fire Hydrant', label: 'Fire Hydrant' },
-    { value: 'Air Release', label: 'Air Release' },
-    { value: 'Valve', label: 'Valve' },
-  ];
+const leakTypeOptions = [
+  { value: 'Air Release', label: 'Air Release' },
+  { value: 'Blow-off', label: 'Blow-off' },
+  { value: 'Fire Hydrant', label: 'Fire Hydrant' },
+  { value: 'Mainline', label: 'Mainline' },
+  { value: 'Others', label: 'Others' },
+  { value: 'Serviceline', label: 'Serviceline' },
+  { value: 'Valve', label: 'Valve' },
+];
 
   // Auto-populate contact person from logged-in user (use full name)
   const contactPerson = useMemo(() => {
