@@ -1,8 +1,9 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, ScrollView, BackHandler } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useFocusEffect, useNavigation } from 'expo-router';
+import * as Location from 'expo-location';
 import LeafletMap from '@/components/ui/maps';
 import { useReportsStore } from '@/utils/reportsStore';
 import { useMapStore } from '@/utils/mapStore';
@@ -11,6 +12,9 @@ import { useSettingsStore } from '@/utils/settingsStore';
 export default function NearestMetersScreen() {
   const insets = useSafeAreaInsets();
   const mapKey = useRef(0);
+  const navigation = useNavigation();
+  const locationSubscription = useRef<Location.LocationSubscription | null>(null);
+  const isInitialLocation = useRef(true);
   
   // Zustand store
   const {
@@ -23,9 +27,11 @@ export default function NearestMetersScreen() {
     dataStatus,
     setSelectedId,
     setCenter,
+    setUserLocation,
     initialize,
     refreshLocation,
     findNearestMeters,
+    recheckCustomerData,
   } = useReportsStore();
 
   // Offline map state
@@ -49,6 +55,104 @@ export default function NearestMetersScreen() {
     }
   }, [dataStatus]);
 
+  // Recheck customer data when screen is focused (after returning from settings)
+  useFocusEffect(
+    React.useCallback(() => {
+      // Only recheck if data status is 'empty' - user might have just downloaded data
+      if (dataStatus === 'empty') {
+        console.log('[Reports] Screen focused, rechecking customer data...');
+        recheckCustomerData();
+      }
+    }, [dataStatus, recheckCustomerData])
+  );
+
+  // Start live location tracking when screen is focused
+  useFocusEffect(
+    React.useCallback(() => {
+      let isActive = true;
+
+      const startLocationTracking = async () => {
+        try {
+          const { status } = await Location.requestForegroundPermissionsAsync();
+          if (status !== 'granted') {
+            console.log('[Reports] Location permission not granted');
+            return;
+          }
+          // Watch location with high accuracy
+          locationSubscription.current = await Location.watchPositionAsync(
+            {
+              accuracy: Location.Accuracy.High,
+              timeInterval: 5000, // Update every 5 seconds
+              distanceInterval: 10, // Or when moved 10 meters
+            },
+            (location) => {
+              if (isActive) {
+                const newLocation = {
+                  lat: location.coords.latitude,
+                  lng: location.coords.longitude,
+                };
+                setUserLocation(newLocation);
+                
+                // Only auto-update center on first location or when not viewing a selected meter
+                // This prevents map from re-centering when user has manually moved/zoomed the map
+                if (isInitialLocation.current && !selectedId) {
+                  setCenter(newLocation);
+                  isInitialLocation.current = false;
+                }
+              }
+            }
+          );
+        } catch (error) {
+          console.warn('[Reports] Location tracking error:', error);
+        }
+      };
+
+      startLocationTracking();
+
+      // Cleanup on screen blur
+      return () => {
+        isActive = false;
+        if (locationSubscription.current) {
+          locationSubscription.current.remove();
+          locationSubscription.current = null;
+        }
+        isInitialLocation.current = true; // Reset for next time screen is focused
+      };
+    }, [selectedId, setUserLocation, setCenter])
+  );
+
+  // Keep tab bar visible with normal styling
+  useEffect(() => {
+    navigation.setOptions({
+      tabBarStyle: {
+        backgroundColor: '#ffffff',
+        borderTopWidth: 1,
+        borderTopColor: '#e5e7eb',
+        height: 60 + insets.bottom,
+        paddingBottom: insets.bottom,
+        paddingTop: 8,
+        elevation: 8,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+      },
+    });
+  }, [navigation, insets.bottom]);
+
+  // Handle Android back button press when meter is selected
+  useEffect(() => {
+    if (!selected) return;
+
+    // Handle hardware back button on Android
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+      setSelectedId(null);
+      return true; // Prevent default back behavior
+    });
+
+    return () => backHandler.remove();
+  }, [selected, setSelectedId]);
+
   const handleRefreshLocation = async () => {
     const success = await refreshLocation();
     if (success) {
@@ -60,10 +164,20 @@ export default function NearestMetersScreen() {
   };
 
   const handleFindMeters = async () => {
-    if (!userLocation) {
+    // Don't start new search if already searching
+    if (isFindingMeters) {
+      return;
+    }
+    
+    // First, refresh location to get the latest position
+    const success = await refreshLocation();
+    
+    if (!success) {
       Alert.alert('Location unavailable', 'Please enable location services to find nearby meters.');
       return;
     }
+    
+    // Then find nearest meters with the updated location
     await findNearestMeters();
   };
 
@@ -71,6 +185,7 @@ export default function NearestMetersScreen() {
     // Re-center to user location if available
     if (userLocation) {
       setCenter(userLocation);
+      isInitialLocation.current = false; // User manually centered, don't auto-update
       mapKey.current += 1; // Force map re-render with new center
     } else {
       Alert.alert('Location unavailable', 'Please enable location services.');
@@ -130,19 +245,10 @@ export default function NearestMetersScreen() {
             <Ionicons name="locate" size={20} color="#1f3a8a" />
           </TouchableOpacity>
           
-          {/* Refresh location button */}
-          <TouchableOpacity 
-            style={styles.fab} 
-            onPress={handleRefreshLocation}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="refresh-outline" size={20} color="#1f3a8a" />
-          </TouchableOpacity>
-          
           {/* Reload nearest meters button - only show when meters exist and not selected */}
           {!selected && meters.length > 0 && (
             <TouchableOpacity 
-              style={styles.fab} 
+              style={[styles.fab, isFindingMeters && styles.fabDisabled]} 
               onPress={handleFindMeters}
               activeOpacity={0.7}
               disabled={isFindingMeters}
@@ -245,7 +351,7 @@ export default function NearestMetersScreen() {
                   <>
                     <Ionicons name="location-outline" size={48} color="#6b7280" />
                     <Text style={styles.emptyTitle}>Location Not Available</Text>
-                    <Text style={styles.emptyText}>Enable location services to find nearby meters.</Text>
+                    <Text style={styles.emptyText}>Enable location services to find nearby meters. Location updates automatically.</Text>
                     <TouchableOpacity style={styles.loadBtn} onPress={handleRefreshLocation}>
                       <Ionicons name="navigate-outline" size={18} color="#fff" style={{ marginRight: 8 }} />
                       <Text style={styles.loadBtnText}>Enable Location</Text>
@@ -261,9 +367,22 @@ export default function NearestMetersScreen() {
                     <Ionicons name="search-outline" size={48} color="#1f3a8a" />
                     <Text style={styles.emptyTitle}>Ready to Search</Text>
                     <Text style={styles.emptyText}>Tap the button below to find the 3 nearest meters to your location.</Text>
-                    <TouchableOpacity style={styles.loadBtn} onPress={handleFindMeters}>
-                      <Ionicons name="locate-outline" size={18} color="#fff" style={{ marginRight: 8 }} />
-                      <Text style={styles.loadBtnText}>Find Nearest Meters</Text>
+                    <TouchableOpacity 
+                      style={[styles.loadBtn, isFindingMeters && styles.loadBtnDisabled]} 
+                      onPress={handleFindMeters}
+                      disabled={isFindingMeters}
+                    >
+                      {isFindingMeters ? (
+                        <>
+                          <ActivityIndicator size="small" color="#fff" style={{ marginRight: 8 }} />
+                          <Text style={styles.loadBtnText}>Searching...</Text>
+                        </>
+                      ) : (
+                        <>
+                          <Ionicons name="locate-outline" size={18} color="#fff" style={{ marginRight: 8 }} />
+                          <Text style={styles.loadBtnText}>Find Nearest Meters</Text>
+                        </>
+                      )}
                     </TouchableOpacity>
                   </>
                 )}
@@ -297,6 +416,17 @@ export default function NearestMetersScreen() {
         )}
 
       </ScrollView>
+
+      {/* Full-screen loading overlay when finding meters */}
+      {isFindingMeters && (
+        <View style={styles.loadingOverlay}>
+          <View style={styles.loadingCard}>
+            <ActivityIndicator size="large" color="#1f3a8a" />
+            <Text style={styles.loadingOverlayTitle}>Finding Nearest Meters</Text>
+            <Text style={styles.loadingOverlayText}>Please wait while we search for meters near you...</Text>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -476,9 +606,55 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 6 },
   },
+  loadBtnDisabled: {
+    opacity: 0.6,
+  },
   loadBtnText: { 
     color: '#fff', 
     fontWeight: '700',
     fontSize: 15,
+  },
+  fabDisabled: {
+    opacity: 0.6,
+  },
+  loadingOverlay: {
+    position: 'absolute',
+    top: -100, // Extend above the screen
+    left: 0,
+    right: 0,
+    bottom: -100, // Extend below the screen to cover tab bar
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 9999,
+    paddingHorizontal: 24,
+  },
+  loadingCard: {
+    backgroundColor: '#fff',
+    borderRadius: 24,
+    padding: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    maxWidth: 340,
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 30,
+    shadowOffset: { width: 0, height: 15 },
+    elevation: 15,
+  },
+  loadingOverlayTitle: {
+    marginTop: 20,
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#111827',
+    textAlign: 'center',
+  },
+  loadingOverlayText: {
+    marginTop: 10,
+    fontSize: 15,
+    color: '#6b7280',
+    textAlign: 'center',
+    lineHeight: 22,
   },
 });

@@ -62,6 +62,7 @@ export default function DraftReportsScreen() {
                 landmark: draft.landmark,
                 leakPhotos: draft.leakPhotos,
                 landmarkPhotos: draft.landmarkPhotos,
+                empId: draft.empId,
               });
 
               const result = await submitReport(payload);
@@ -93,7 +94,7 @@ export default function DraftReportsScreen() {
     setLeakPhotos(draft.leakPhotos);
     setLandmarkPhotos(draft.landmarkPhotos);
 
-    // Navigate to report form with the draft data
+    // Navigate to report form with the draft data AND draft ID for updating
     router.push({
       pathname: '/screens/reportForm',
       params: {
@@ -102,6 +103,7 @@ export default function DraftReportsScreen() {
         account: draft.accountNumber,
         dma: draft.dma,
         coords: draft.coordinates,
+        draftId: draft.id, // Pass the draft ID so form knows it's an edit
       }
     });
   };

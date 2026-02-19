@@ -2,6 +2,14 @@ import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { fetchAndSaveCustomerData } from '@/hooks/downloadCustomerData';
 import { hasCustomerData, getCustomerCount, clearCustomerData } from '@/utils/allCustomerData';
+import { 
+  requestNotificationPermissions, 
+  showDownloadNotification, 
+  updateDownloadNotification,
+  showDownloadCompleteNotification,
+  showDownloadErrorNotification,
+  dismissNotification 
+} from '@/services/notificationService';
 
 const OFFLINE_MAP_KEY = '@offline_map_enabled';
 
@@ -98,14 +106,43 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       };
     }
     
+    // Request notification permissions
+    const hasPermission = await requestNotificationPermissions();
+    
     set({ 
       downloading: true,
       downloadProgress: { current: 0, total: 0 },
     });
     
+    const NOTIFICATION_ID = 'customer-data-download';
+    let lastNotificationUpdate = 0;
+    
     try {
+      // Show initial notification
+      if (hasPermission) {
+        await showDownloadNotification(
+          NOTIFICATION_ID,
+          'Downloading Customer Data',
+          0,
+          'Starting download...'
+        );
+      }
+      
       const result = await fetchAndSaveCustomerData((current, total) => {
         set({ downloadProgress: { current, total } });
+        
+        // Update notification every 2 seconds to avoid too many updates
+        const now = Date.now();
+        if (hasPermission && now - lastNotificationUpdate > 2000) {
+          lastNotificationUpdate = now;
+          const progress = Math.round((current / total) * 100);
+          updateDownloadNotification(
+            NOTIFICATION_ID,
+            'Downloading Customer Data',
+            progress,
+            `${current.toLocaleString()} / ${total.toLocaleString()} records (${progress}%)`
+          );
+        }
       });
       
       if (result.success) {
@@ -113,11 +150,30 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
           customerCount: result.count,
           customerDataStatus: 'downloaded',
         });
+        
+        // Show completion notification
+        if (hasPermission) {
+          await dismissNotification(NOTIFICATION_ID);
+          await showDownloadCompleteNotification(
+            'Download Complete',
+            `Successfully downloaded ${result.count.toLocaleString()} customer records.`
+          );
+        }
+        
         return { 
           success: true, 
           message: `Downloaded ${result.count.toLocaleString()} customer records.`,
         };
       } else {
+        // Show error notification
+        if (hasPermission) {
+          await dismissNotification(NOTIFICATION_ID);
+          await showDownloadErrorNotification(
+            'Download Failed',
+            result.error ?? 'Failed to download customer data.'
+          );
+        }
+        
         return { 
           success: false, 
           message: result.error ?? 'Failed to download customer data.',
@@ -125,6 +181,16 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       }
     } catch (error) {
       console.error('Error downloading customer data:', error);
+      
+      // Show error notification
+      if (hasPermission) {
+        await dismissNotification(NOTIFICATION_ID);
+        await showDownloadErrorNotification(
+          'Download Failed',
+          'An unexpected error occurred while downloading.'
+        );
+      }
+      
       return { 
         success: false, 
         message: 'An unexpected error occurred while downloading.',

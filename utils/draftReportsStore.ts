@@ -18,6 +18,7 @@ export type DraftReport = {
   leakPhotos: string[];
   landmarkPhotos: string[];
   savedAt: string;
+  empId: string;
 };
 
 type DraftReportsState = {
@@ -27,6 +28,7 @@ type DraftReportsState = {
   // Actions
   loadDrafts: () => Promise<void>;
   saveDraft: (draft: Omit<DraftReport, 'id' | 'savedAt'>) => Promise<void>;
+  updateDraft: (id: string, draft: Omit<DraftReport, 'id' | 'savedAt'>) => Promise<void>;
   deleteDraft: (id: string) => Promise<void>;
   getDraftById: (id: string) => DraftReport | undefined;
   getDraftsCount: () => number;
@@ -63,6 +65,33 @@ export const useDraftReportsStore = create<DraftReportsState>((set, get) => ({
       set({ drafts: updatedDrafts });
     } catch (error) {
       console.error('Error saving draft:', error);
+      throw error;
+    }
+  },
+
+  updateDraft: async (id, draft) => {
+    try {
+      const currentDrafts = get().drafts;
+      const existingDraft = currentDrafts.find(d => d.id === id);
+      
+      if (!existingDraft) {
+        throw new Error('Draft not found');
+      }
+
+      const updatedDraft: DraftReport = {
+        ...draft,
+        id: existingDraft.id,
+        savedAt: new Date().toISOString(),
+      };
+
+      const updatedDrafts = currentDrafts.map(d => 
+        d.id === id ? updatedDraft : d
+      );
+      
+      await AsyncStorage.setItem(DRAFTS_KEY, JSON.stringify(updatedDrafts));
+      set({ drafts: updatedDrafts });
+    } catch (error) {
+      console.error('Error updating draft:', error);
       throw error;
     }
   },

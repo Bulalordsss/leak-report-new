@@ -131,6 +131,7 @@ export const useMobileReportStore = create<MobileReportState>((set, get) => ({
         leakPhotos: report.leakPhotos,
         landmarkPhotos: report.landmarkPhotos,
         reportedAt: report.reportedAt,
+        empId: report.empId,
       });
       
       // Update status to synced

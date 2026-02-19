@@ -301,10 +301,13 @@ function decryptCustomer(c: Customer): Customer {
 /** Load all customer data from SQLite (decrypts names) */
 export async function loadCustomerData(): Promise<Customer[]> {
   try {
+    console.log('[loadCustomerData] Attempting to load customer data...');
     const db = await getDatabase();
     const result = await db.getAllAsync<Customer>('SELECT meterNumber, accountNumber, address, dma, latitude, longitude, name, wss, connectionClass, status FROM customers');
+    console.log(`[loadCustomerData] Loaded ${result.length} customers from database`);
     return result.map(decryptCustomer);
-  } catch {
+  } catch (error) {
+    console.error('[loadCustomerData] Error loading customer data:', error);
     return [];
   }
 }

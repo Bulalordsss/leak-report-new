@@ -12,7 +12,14 @@ import { useDraftReportsStore } from '@/utils/draftReportsStore';
 
 export default function ReportScreen() {
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams<{ id?: string; address?: string; account?: string; dma?: string; coords?: string }>();
+  const params = useLocalSearchParams<{ 
+    id?: string; 
+    address?: string; 
+    account?: string; 
+    dma?: string; 
+    coords?: string;
+    draftId?: string; // Add draftId to know if we're editing
+  }>();
   const { user } = useAuthStore();
   const [showLeakTypeDropdown, setShowLeakTypeDropdown] = useState(false);
 
@@ -28,17 +35,20 @@ export default function ReportScreen() {
   } = useReportForm();
 
   const { submitReport, isSubmitting, isOnline, pendingCount } = useLeakReport();
-  const { saveDraft: saveDraftToStore } = useDraftReportsStore();
+  const { saveDraft: saveDraftToStore, updateDraft: updateDraftInStore, deleteDraft } = useDraftReportsStore();
 
-  // Leak type options with proper display names
+  // Check if we're editing an existing draft
+  const isEditingDraft = !!params.draftId;
+
+  // Leak type options with user-friendly display names (IDs are hidden from users)
   const leakTypeOptions = [
-    { value: 'Serviceline', label: '38 – Serviceline' },
-    { value: 'Mainline', label: '39 – Mainline' },
-    { value: 'Others', label: '40 – Others' },
-    { value: 'Blow-off', label: '64 – Blow-off' },
-    { value: 'Fire Hydrant', label: '65 – Fire Hydrant' },
-    { value: 'Air Release', label: '66 – Air Release' },
-    { value: 'Valve', label: '61 – Valve' },
+    { value: 'Serviceline', label: 'Serviceline' },
+    { value: 'Mainline', label: 'Mainline' },
+    { value: 'Others', label: 'Others' },
+    { value: 'Blow-off', label: 'Blow-off' },
+    { value: 'Fire Hydrant', label: 'Fire Hydrant' },
+    { value: 'Air Release', label: 'Air Release' },
+    { value: 'Valve', label: 'Valve' },
   ];
 
   // Auto-populate contact person from logged-in user (use full name)
@@ -83,6 +93,9 @@ export default function ReportScreen() {
       return;
     }
 
+    console.log('[ReportForm] User object:', user);
+    console.log('[ReportForm] Creating payload...');
+
     const payload = createLeakReportPayload({
       meterNumber: selectedMeter.id,
       accountNumber: selectedMeter.account,
@@ -96,11 +109,23 @@ export default function ReportScreen() {
       landmark: landmark,
       leakPhotos: leakPhotos,
       landmarkPhotos: landmarkPhotos,
+      empId: user?.empId || '',
     });
+
+    console.log('[ReportForm] Payload created successfully');
 
     const result = await submitReport(payload);
 
     if (result.success) {
+      // If we're editing a draft and successfully submitted, delete the draft
+      if (isEditingDraft && params.draftId) {
+        try {
+          await deleteDraft(params.draftId);
+        } catch (error) {
+          console.error('Failed to delete draft after submission:', error);
+        }
+      }
+      
       Alert.alert(
         result.cached ? 'Saved Offline' : 'Submitted',
         result.message,
@@ -113,7 +138,7 @@ export default function ReportScreen() {
 
   const saveDraft = async () => {
     try {
-      await saveDraftToStore({
+      const draftData = {
         meterNumber: selectedMeter.id,
         accountNumber: selectedMeter.account,
         address: selectedMeter.address,
@@ -126,10 +151,21 @@ export default function ReportScreen() {
         landmark: landmark,
         leakPhotos: leakPhotos,
         landmarkPhotos: landmarkPhotos,
-      });
-      Alert.alert('Draft Saved', 'Your report has been saved as a draft.', [
-        { text: 'OK', onPress: () => { reset(); router.back(); } }
-      ]);
+        empId: user?.empId || '',
+      };
+
+      // If editing existing draft, update it. Otherwise, create new draft.
+      if (isEditingDraft && params.draftId) {
+        await updateDraftInStore(params.draftId, draftData);
+        Alert.alert('Draft Updated', 'Your draft has been updated successfully.', [
+          { text: 'OK', onPress: () => { reset(); router.back(); } }
+        ]);
+      } else {
+        await saveDraftToStore(draftData);
+        Alert.alert('Draft Saved', 'Your report has been saved as a draft.', [
+          { text: 'OK', onPress: () => { reset(); router.back(); } }
+        ]);
+      }
     } catch (error) {
       Alert.alert('Error', 'Failed to save draft. Please try again.');
     }
@@ -148,26 +184,23 @@ export default function ReportScreen() {
       </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
-        {/* Selected Meter */}
+        {/* Selected Meter - Compact View */}
         <View style={styles.sheet}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-            <Ionicons name="disc-outline" size={16} color="#1f3a8a" style={{ marginRight: 6 }} />
-            <Text style={styles.sheetTitle}>Selected Meter</Text>
-          </View>
-
-          <View style={styles.detailRow}>
-            <View style={styles.detailIcon}><Ionicons name="speedometer-outline" size={18} color="#1f3a8a" /></View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.detailLabel}>Meter Number</Text>
-              <Text style={styles.detailValue}>{selectedMeter.id}</Text>
+          <View style={styles.compactMeterRow}>
+            <View style={styles.meterInfoLeft}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                <Ionicons name="speedometer-outline" size={16} color="#6b7280" style={{ marginRight: 4 }} />
+                <Text style={styles.compactLabel}>Meter:</Text>
+              </View>
+              <Text style={styles.compactValue}>{selectedMeter.id}</Text>
             </View>
-          </View>
-
-          <View style={styles.detailRow}>
-            <View style={styles.detailIcon}><Ionicons name="location-outline" size={18} color="#1f3a8a" /></View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.detailLabel}>Address</Text>
-              <Text style={styles.detailValue}>{selectedMeter.address}</Text>
+            
+            <View style={styles.meterInfoRight}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                <Ionicons name="location-outline" size={16} color="#6b7280" style={{ marginRight: 4 }} />
+                <Text style={styles.compactLabel}>Address:</Text>
+              </View>
+              <Text style={styles.compactValue} numberOfLines={2}>{selectedMeter.address}</Text>
             </View>
           </View>
         </View>
@@ -270,7 +303,7 @@ export default function ReportScreen() {
           {/* Leak Photos */}
           <View style={{ marginTop: 8 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-              <Text style={{ color: '#111827', fontWeight: '600', fontSize: 14 }}>Leak Photos (2 only)</Text>
+              <Text style={{ color: '#111827', fontWeight: '600', fontSize: 14 }}>Leak Photos (Atleast 1 Image)</Text>
               <Text style={styles.asterisk}> *</Text>
             </View>
             <Upload title="" max={2} value={leakPhotos} onChange={setLeakPhotos} />
@@ -279,7 +312,7 @@ export default function ReportScreen() {
           {/* Landmark Photo */}
           <View style={{ marginTop: 12 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-              <Text style={{ color: '#111827', fontWeight: '600', fontSize: 14 }}>Landmark Photo</Text>
+              <Text style={{ color: '#111827', fontWeight: '600', fontSize: 14 }}>Landmark Photo (Required 1 Image)</Text>
               <Text style={styles.asterisk}> *</Text>
             </View>
             <Upload title="" max={1} value={landmarkPhotos} onChange={setLandmarkPhotos} />
@@ -325,7 +358,7 @@ export default function ReportScreen() {
             )}
           </TouchableOpacity>
           
-          {/* Save Draft button */}
+          {/* Save/Update Draft button */}
           <TouchableOpacity 
             style={styles.draftBtn} 
             activeOpacity={0.9} 
@@ -333,7 +366,9 @@ export default function ReportScreen() {
             disabled={isSubmitting}
           >
             <Ionicons name="save-outline" size={18} color="#1f3a8a" style={{ marginRight: 8 }} />
-            <Text style={styles.draftBtnText}>Save Draft</Text>
+            <Text style={styles.draftBtnText}>
+              {isEditingDraft ? 'Update Draft' : 'Save Draft'}
+            </Text>
           </TouchableOpacity>
 
           {/* Clear form button */}
@@ -427,6 +462,29 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   sheetTitle: { fontSize: 16, fontWeight: '700', color: '#111827' },
+
+  // Compact meter display
+  compactMeterRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  meterInfoLeft: {
+    flex: 1,
+  },
+  meterInfoRight: {
+    flex: 2,
+  },
+  compactLabel: {
+    color: '#6b7280',
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  compactValue: {
+    color: '#111827',
+    fontSize: 13,
+    fontWeight: '700',
+    marginTop: 2,
+  },
 
   detailRow: {
     flexDirection: 'row',

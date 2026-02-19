@@ -2,6 +2,14 @@ import { create } from 'zustand';
 import * as FileSystem from 'expo-file-system/legacy';
 import { unzipSync } from 'fflate';
 import { InteractionManager } from 'react-native';
+import { 
+  requestNotificationPermissions, 
+  showDownloadNotification, 
+  updateDownloadNotification,
+  showDownloadCompleteNotification,
+  showDownloadErrorNotification,
+  dismissNotification 
+} from '@/services/notificationService';
 
 const MAP_URL = 'https://davao-water.gov.ph/dcwdApps/mobileApps/reactMap/davroad.zip';
 
@@ -161,9 +169,24 @@ async function downloadMap(
   set: (partial: Partial<MapState>) => void,
 ) {
   set({ isDownloading: true, statusMessage: 'Downloading map...' });
+  
+  // Request notification permissions
+  const hasPermission = await requestNotificationPermissions();
+  const NOTIFICATION_ID = 'map-download';
+  let lastNotificationUpdate = 0;
 
   try {
     console.log('Starting download from:', url);
+    
+    // Show initial notification
+    if (hasPermission) {
+      await showDownloadNotification(
+        NOTIFICATION_ID,
+        'Downloading Offline Map',
+        0,
+        'Starting download...'
+      );
+    }
 
     const downloadResumable = FileSystem.createDownloadResumable(
       url,
@@ -183,6 +206,20 @@ async function downloadMap(
 
         const time = new Date().toLocaleTimeString();
         console.log(`[${time}] Download progress: ${progress}%`);
+        
+        // Update notification every 2 seconds
+        const now = Date.now();
+        if (hasPermission && now - lastNotificationUpdate > 2000) {
+          lastNotificationUpdate = now;
+          const mb = (downloadProgress.totalBytesWritten / (1024 * 1024)).toFixed(1);
+          const totalMb = (downloadProgress.totalBytesExpectedToWrite / (1024 * 1024)).toFixed(1);
+          updateDownloadNotification(
+            NOTIFICATION_ID,
+            'Downloading Offline Map',
+            progress,
+            `${mb} MB / ${totalMb} MB (${progress}%)`
+          );
+        }
       },
     );
 
@@ -191,12 +228,26 @@ async function downloadMap(
     if (!downloadResult) {
       throw new Error('Download failed - no result returned');
     }
+    
+    // Dismiss download notification
+    if (hasPermission) {
+      await dismissNotification(NOTIFICATION_ID);
+    }
 
     console.log('Download complete:', downloadResult.uri);
     set({ isDownloading: false, statusMessage: 'Download complete' });
   } catch (error: any) {
     console.error('Download error:', error);
     set({ isDownloading: false });
+    
+    // Show error notification
+    if (hasPermission) {
+      await dismissNotification(NOTIFICATION_ID);
+      await showDownloadErrorNotification(
+        'Map Download Failed',
+        error.message || 'An error occurred during download'
+      );
+    }
 
     // Try to clean up partial download
     try {
@@ -217,6 +268,19 @@ async function unzipMap(
   set: (partial: Partial<MapState>) => void,
 ) {
   set({ isUnzipping: true, statusMessage: 'Reading zip file...' });
+  
+  const NOTIFICATION_ID = 'map-extract';
+  const hasPermission = await requestNotificationPermissions();
+  
+  // Show initial notification
+  if (hasPermission) {
+    await showDownloadNotification(
+      NOTIFICATION_ID,
+      'Extracting Map Data',
+      0,
+      'Reading zip file...'
+    );
+  }
 
   try {
     console.log('Starting fflate extraction...');
@@ -254,11 +318,31 @@ async function unzipMap(
       const pct = Math.round((written / fileSize) * 100);
       set({ statusMessage: `Reading zip: ${pct}%` });
       console.log(`Read ${pct}% (${written}/${fileSize})`);
+      
+      // Update notification
+      if (hasPermission) {
+        await updateDownloadNotification(
+          NOTIFICATION_ID,
+          'Extracting Map Data',
+          pct,
+          `Reading zip file (${pct}%)`
+        );
+      }
     }
     console.log(`Zip read in ${Date.now() - startRead}ms`);
 
     // Decompress with fflate (much faster than JSZip)
     set({ statusMessage: 'Decompressing...' });
+    
+    if (hasPermission) {
+      await updateDownloadNotification(
+        NOTIFICATION_ID,
+        'Extracting Map Data',
+        50,
+        'Decompressing files...'
+      );
+    }
+    
     const startDecompress = Date.now();
     const extracted = unzipSync(zipBytes);
     const filenames = Object.keys(extracted);
@@ -305,13 +389,42 @@ async function unzipMap(
       processed += batch.length;
       const pct = Math.round((processed / filenames.length) * 100);
       set({ statusMessage: `Writing files: ${pct}% (${processed}/${filenames.length})` });
+      
+      // Update notification
+      if (hasPermission) {
+        await updateDownloadNotification(
+          NOTIFICATION_ID,
+          'Extracting Map Data',
+          50 + Math.round(pct / 2), // 50-100% range for writing
+          `Writing files (${processed}/${filenames.length})`
+        );
+      }
     }
 
     console.log('Extraction complete');
     set({ isUnzipping: false, statusMessage: 'Extraction complete' });
+    
+    // Show completion notification
+    if (hasPermission) {
+      await dismissNotification(NOTIFICATION_ID);
+      await showDownloadCompleteNotification(
+        'Map Data Extracted',
+        `${filenames.length} files extracted successfully`
+      );
+    }
   } catch (error: any) {
     console.error('Unzip error:', error);
     set({ isUnzipping: false });
+    
+    // Show error notification
+    if (hasPermission) {
+      await dismissNotification(NOTIFICATION_ID);
+      await showDownloadErrorNotification(
+        'Map Extraction Failed',
+        error.message || 'An error occurred during extraction'
+      );
+    }
+    
     throw new Error(`Unzip failed: ${error.message}`);
   }
 }

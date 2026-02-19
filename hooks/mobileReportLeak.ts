@@ -227,6 +227,7 @@ export function createLeakReportPayload(params: {
   landmark: string;
   leakPhotos: string[];
   landmarkPhotos: string[];
+  empId: string;
 }): LeakReportPayload {
   return {
     ...params,

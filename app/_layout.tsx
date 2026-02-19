@@ -3,6 +3,25 @@ import { Stack, Redirect, usePathname } from "expo-router";
 import { View, ActivityIndicator } from "react-native";
 import { useAuthStore } from "../utils/authStore";
 
+// Dynamically import notifications to handle Expo Go limitations
+let Notifications: any = null;
+try {
+  Notifications = require('expo-notifications');
+  
+  // Configure notification handler only if available
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: false,
+      shouldSetBadge: false,
+      shouldShowBanner: true,
+      shouldShowList: true,
+    }),
+  });
+} catch (error) {
+  console.warn('[App] expo-notifications not available. Notifications disabled in Expo Go.');
+}
+
 export default function Layout() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const pathname = usePathname();

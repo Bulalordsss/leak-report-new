@@ -32,6 +32,7 @@ interface ReportsState {
   initialize: () => Promise<void>;
   refreshLocation: () => Promise<boolean>;
   findNearestMeters: () => Promise<void>;
+  recheckCustomerData: () => Promise<void>; // Add function to recheck data
   
   // Computed
   getSelectedMeter: () => Meter | null;
@@ -106,6 +107,9 @@ export const useReportsStore = create<ReportsState>((set, get) => ({
     
     set({ isFindingMeters: true });
     
+    // Add small delay to allow UI to update (show loading state)
+    await new Promise(resolve => setTimeout(resolve, 50));
+    
     try {
       const data = await loadCustomerData();
       set({ customerCount: data.length });
@@ -117,19 +121,43 @@ export const useReportsStore = create<ReportsState>((set, get) => ({
       
       set({ dataStatus: 'loaded' });
       
-      // Run computation in next tick to allow UI update
+      // Process the computation in the next frame to keep UI responsive
       await new Promise<void>((resolve) => {
-        setTimeout(() => {
-          const nearestMeters = getNearestMetersFromCustomers(userLocation, data, 3);
-          set({ meters: nearestMeters });
-          resolve();
-        }, 0);
+        requestAnimationFrame(() => {
+          setTimeout(() => {
+            const nearestMeters = getNearestMetersFromCustomers(userLocation, data, 3);
+            set({ meters: nearestMeters });
+            resolve();
+          }, 0);
+        });
       });
     } catch (error) {
       console.error('Error finding nearest meters:', error);
       set({ dataStatus: 'empty' });
     } finally {
       set({ isFindingMeters: false });
+    }
+  },
+
+  // Recheck if customer data exists (useful after download)
+  recheckCustomerData: async () => {
+    set({ isLoading: true });
+    try {
+      const data = await loadCustomerData();
+      const customerCount = data.length;
+      const dataStatus: DataStatus = customerCount > 0 ? 'loaded' : 'empty';
+      
+      console.log('[ReportsStore] Rechecked customer data:', { customerCount, dataStatus });
+      
+      set({
+        customerCount,
+        dataStatus,
+      });
+    } catch (error) {
+      console.error('Error rechecking customer data:', error);
+      set({ dataStatus: 'empty' });
+    } finally {
+      set({ isLoading: false });
     }
   },
   

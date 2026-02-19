@@ -15,19 +15,20 @@ export interface LeakReportPayload {
   leakPhotos: string[];  // Base64 encoded images or file URIs
   landmarkPhotos: string[];  // Base64 encoded images or file URIs
   reportedAt: string;  // ISO date string
+  empId: string;  // Employee ID of the person reporting
 }
 
 // API request body structure
 export interface LeakReportApiRequest {
   geom: string;  // Stringified GeoJSON format: '{ "type": "Point", "coordinates": [longitude, latitude] }'
   refNo?: string;
-  reportedBy?: string;
+  reportedBy?: string;  // Employee ID of the reporter
   referenceMtr: string;  // Meter number
   referenceRecaddrs: string;  // Address
-  reportedLocation: string;  // Location type (Surface/Non-Surface)
+  reportedLocation: string;  // Meter address (not Surface/Non-Surface)
   reportedLandmark: string;  // Landmark description
-  leakTypeId: number;  // 0=Unidentified, 1=Serviceline, 2=Mainline, 3=Others
-  leakIndicator: number;  // 0=Surface, 1=Non-Surface
+  leakTypeId: number;  // Leak type ID (38=Serviceline, 39=Mainline, etc.)
+  leakIndicator: number;  // 1=Surface, 2=Non-Surface
   reporterName: string;
   reportedNumber: string;  // Contact number
   image1?: string;  // Base64 image
@@ -76,14 +77,14 @@ function getLeakTypeMapping(leakType: string): { leakTypeId: number; jmsCode: st
       return { leakTypeId: 40, jmsCode: '0000', reportType: '' };
     case 'blow-off':
     case 'blow-off valve':
-      return { leakTypeId: 64, jmsCode: '0000', reportType: '' };
+      return { leakTypeId: 64, jmsCode: '0113', reportType: '' };
     case 'fire hydrant':
-      return { leakTypeId: 65, jmsCode: '0000', reportType: '' };
+      return { leakTypeId: 65, jmsCode: '0114', reportType: '' };
     case 'air release':
     case 'air release valve':
-      return { leakTypeId: 66, jmsCode: '0000', reportType: '' };
+      return { leakTypeId: 66, jmsCode: '0115', reportType: '' };
     case 'valve':
-      return { leakTypeId: 61, jmsCode: '0000', reportType: '' };
+      return { leakTypeId: 61, jmsCode: '0116', reportType: '' };
     default: 
       return { leakTypeId: 40, jmsCode: '0000', reportType: '' }; // Default to Others
   }
@@ -95,8 +96,9 @@ function getLeakTypeId(leakType: string): number {
 }
 
 // Map location to leak indicator
+// Surface = 1, Non-Surface = 2
 function getLeakIndicator(location: string): number {
-  return location.toLowerCase() === 'non-surface' ? 1 : 0;
+  return location.toLowerCase() === 'non-surface' ? 2 : 1;
 }
 
 // Extract the middle 6 digits from account number format "XX-XXXXXX-X"
@@ -156,12 +158,13 @@ function convertToApiRequest(payload: LeakReportPayload): LeakReportApiRequest {
     geom: JSON.stringify(coordinatesToGeoJson(payload.coordinates)),
     referenceMtr: payload.meterNumber,
     referenceRecaddrs: payload.address,
-    reportedLocation: payload.location,
+    reportedLocation: payload.address,  // Use meter address, not Surface/Non-Surface
     reportedLandmark: payload.landmark,
     leakTypeId: getLeakTypeId(payload.leakType),
-    leakIndicator: getLeakIndicator(payload.location),
+    leakIndicator: getLeakIndicator(payload.location),  // 1=Surface, 2=Non-Surface
     reporterName: payload.contactPerson,
     reportedNumber: payload.contactNumber,
+    reportedBy: payload.empId,  // Employee ID
     image1: payload.leakPhotos[0] || '',
     image2: payload.leakPhotos[1] || '',
     landmark: payload.landmarkPhotos[0] || '',
@@ -230,22 +233,40 @@ export async function submitLeakReportWithFiles(payload: LeakReportPayload): Pro
       leakTypeId: leakTypeMapping.leakTypeId,
       jmsCode: leakTypeMapping.jmsCode,
       reportType: leakTypeMapping.reportType,
+      leakIndicator: getLeakIndicator(payload.location),
       contactPerson: payload.contactPerson,
       contactNumber: payload.contactNumber,
+      empId: payload.empId,
     });
     
     // Add text fields with PascalCase names
+    formData.append('ReportedBy', payload.empId || '');
     formData.append('ReferenceMtr', payload.meterNumber || '');
     formData.append('ReferenceRecaddrs', referenceRecaddrs);  // Extract 6-digit code from account number
-    formData.append('ReportedLocation', payload.location || '');
+    formData.append('ReportedLocation', payload.address || '');  // Use meter address, not Surface/Non-Surface
     formData.append('ReportedLandmark', payload.landmark || '');
     formData.append('LeakTypeId', leakTypeMapping.leakTypeId.toString());
     formData.append('JmsCode', leakTypeMapping.jmsCode);
     formData.append('ReportType', leakTypeMapping.reportType);
-    formData.append('LeakIndicator', getLeakIndicator(payload.location).toString());
+    formData.append('LeakIndicator', getLeakIndicator(payload.location).toString());  // 1=Surface, 2=Non-Surface
     formData.append('ReporterName', payload.contactPerson || '');
     formData.append('ReportedNumber', payload.contactNumber || '');
-    formData.append('ReportedBy', payload.contactPerson || '');  // Same as reporter name
+    
+    // Format DtReported as "YYYY-MM-DD HH:mm:ss.SSSSSS+TZ"
+    const reportDate = new Date(payload.reportedAt);
+    const year = reportDate.getFullYear();
+    const month = String(reportDate.getMonth() + 1).padStart(2, '0');
+    const day = String(reportDate.getDate()).padStart(2, '0');
+    const hours = String(reportDate.getHours()).padStart(2, '0');
+    const minutes = String(reportDate.getMinutes()).padStart(2, '0');
+    const seconds = String(reportDate.getSeconds()).padStart(2, '0');
+    const milliseconds = String(reportDate.getMilliseconds()).padStart(3, '0');
+    const microseconds = milliseconds + '000'; // Extend to 6 digits
+    const timezoneOffset = -reportDate.getTimezoneOffset();
+    const tzHours = String(Math.floor(Math.abs(timezoneOffset) / 60)).padStart(2, '0');
+    const tzSign = timezoneOffset >= 0 ? '+' : '-';
+    const formattedDate = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${microseconds}${tzSign}${tzHours}`;
+    formData.append('DtReported', formattedDate);
     
     // Generate a UUID v4 format ID for the report (React Native compatible)
     const uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
@@ -254,6 +275,24 @@ export async function submitLeakReportWithFiles(payload: LeakReportPayload): Pro
       return v.toString(16);
     });
     formData.append('Id', uuid);
+    
+    // Log all FormData fields for debugging
+    console.log('[MobileReport API] FormData fields being sent:');
+    console.log('- Geom:', coords);
+    console.log('- ReferenceMtr:', payload.meterNumber || '');
+    console.log('- ReferenceRecaddrs:', referenceRecaddrs);
+    console.log('- ReportedLocation:', payload.address || '');
+    console.log('- ReportedLandmark:', payload.landmark || '');
+    console.log('- LeakTypeId:', leakTypeMapping.leakTypeId.toString());
+    console.log('- JmsCode:', leakTypeMapping.jmsCode);
+    console.log('- ReportType:', leakTypeMapping.reportType);
+    console.log('- LeakIndicator:', getLeakIndicator(payload.location).toString());
+    console.log('- ReporterName:', payload.contactPerson || '');
+    console.log('- ReportedNumber:', payload.contactNumber || '');
+    console.log('- ReportedBy:', payload.empId || '');
+    console.log('- DtReported:', formattedDate);
+    console.log('- Id:', uuid);
+
 
     // Add leak photos (Image1, Image2)
     if (payload.leakPhotos[0]) {
