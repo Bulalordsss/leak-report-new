@@ -98,7 +98,7 @@ export async function* fetchAllCustomerPages(
   while (fetchedCount < totalCount) {
     pageIndex++;
     const page = await fetchCustomerPage({ pageIndex, pageSize });
-    
+    ``
     if (page.data.data.length === 0) {
       break; // No more data
     }
