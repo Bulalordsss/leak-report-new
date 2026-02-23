@@ -44,10 +44,16 @@ api.interceptors.response.use(
     // Handle token expiration
     if (error.response?.status === 401) {
       console.log('[API] Token expired or invalid, redirecting to login...');
-      await AsyncStorage.removeItem("access_token");
-      await AsyncStorage.removeItem("@auth_user");
-      router.replace("/login");
-      return new Promise(() => {});
+      // Clear stored auth and expiry keys (use the same keys authStore uses)
+      try {
+        await AsyncStorage.multiRemove(['access_token', 'auth_user', 'session_expiry']);
+      } catch (e) {
+        console.warn('[API] Error clearing auth storage on 401', e);
+      }
+      // Redirect to login screen
+      router.replace('/login');
+      // Reject so callers receive the error and can handle it (do not return a never-resolving promise)
+      return Promise.reject(error);
     }
 
     // Enhanced error logging for debugging

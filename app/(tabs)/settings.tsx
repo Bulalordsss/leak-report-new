@@ -1,10 +1,11 @@
-import React, { useEffect } from 'react';
-import { ScrollView, View, Text, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { ScrollView, View, Text, TouchableOpacity, StyleSheet, Alert, Switch, ActivityIndicator, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useSettingsStore } from '@/utils/settingsStore';
 import { useMapStore } from '@/utils/mapStore';
+import { requestNotificationPermissions, getNotificationPermissions } from '@/services/notificationService';
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
@@ -35,10 +36,63 @@ export default function SettingsScreen() {
     setError: setMapError,
   } = useMapStore();
 
+  const [isEnabled, setIsEnabled] = useState(false);
+  /**
+   * Handle toggle: when enabling, request notification permission; when disabling, open app settings
+   * since apps cannot programmatically revoke permissions on behalf of the user.
+   */
+  const handleToggle = async (value: boolean) => {
+    if (value) {
+      // Request permissions
+      try {
+        const granted = await requestNotificationPermissions();
+        if (granted) {
+          setIsEnabled(true);
+        } else {
+          setIsEnabled(false);
+          Alert.alert(
+            'Notifications Disabled',
+            'Notification permissions were not granted. You can enable them in the app settings.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Open Settings', onPress: () => Linking.openSettings() },
+            ]
+          );
+        }
+      } catch (error) {
+        console.error('Error requesting notification permissions', error);
+        Alert.alert('Error', 'Unable to request notification permissions. Please check your system settings.');
+        setIsEnabled(false);
+      }
+    } else {
+      // Can't programmatically revoke — open settings so the user can turn it off
+      Alert.alert(
+        'Disable Notifications',
+        'To disable notifications, turn them off in the app settings.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Open Settings', onPress: () => Linking.openSettings() },
+        ]
+      );
+      // Optimistically update UI; actual permission remains until user acts
+      setIsEnabled(false);
+    }
+  };
+
   useEffect(() => {
     checkCustomerData();
     checkExistingMap();
     loadOfflineMapPreference();
+
+    // Initialize notification toggle state from current permissions
+    (async () => {
+      try {
+        const granted = await getNotificationPermissions();
+        setIsEnabled(granted);
+      } catch (error) {
+        console.warn('Unable to read notification permissions', error);
+      }
+    })();
   }, []);
 
   const handleDownloadClientData = async () => {
@@ -286,6 +340,32 @@ export default function SettingsScreen() {
           )}
         </View>
 
+        {/* `Notification` Settings Card */}
+        <View style={styles.sheet}>
+          <View style={styles.cardHeaderRow}>
+            <View style={styles.detailIcon}>
+              <Ionicons name="notifications-outline" size={18} color="#1f3a8a" />
+            </View>
+            <Text style={styles.sheetTitle}>Notifications</Text>
+          </View>
+
+          <View style={{ marginTop: 8 }}>
+            {/* We use itemRow for the background and itemLabel for the text style */}
+            <View style={[styles.itemRow, { justifyContent: 'space-between' }]}>
+              <Text style={styles.itemLabel}>Notification Permission</Text>
+              <Switch
+                trackColor={{ false: "#767577", true: "#1f3a8a" }}
+                thumbColor={isEnabled ? "#ffffff" : "#f4f3f4"}
+                ios_backgroundColor="#3e3e3e"
+                onValueChange={handleToggle}
+                value={isEnabled}
+                // Small scale adjustment to make the switch fit perfectly in the row height
+                style={{ transform: [{ scaleX: 0.9 }, { scaleY: 0.9 }], marginRight: -4 }}
+              />
+            </View>
+          </View>
+        </View>
+
         {/* General Settings Card */}
         <View style={styles.sheet}>
           <View style={styles.cardHeaderRow}>
@@ -380,6 +460,21 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
 
+  // Toggle row for switches and their labels
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 8,
+    paddingHorizontal: 2,
+    backgroundColor: '#f9fafb',
+    borderRadius: 12,
+  },
+  label: {
+    color: '#6b7280',
+    fontSize: 14,
+  },
+
   primaryBtn: {
     marginTop: 12,
     flexDirection: 'row',
@@ -393,6 +488,7 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 6 },
   },
+
   primaryBtnDisabled: {
     backgroundColor: '#9ca3af',
     shadowOpacity: 0,

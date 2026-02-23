@@ -54,7 +54,15 @@
           }
         }
       ],
-      "expo-sqlite"
+      "expo-sqlite",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/logo-hdcwd-1.png",
+          "color": "#1a73e8",
+          "sounds": []
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

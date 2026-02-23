@@ -387,7 +387,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     gap: 8,
   },
-  statusText: { color: '#6b7280', fontSize: 13 },
+  statusText: { color: '#6b7280', fontSize: 13, marginTop: 16 },
   retryText: { color: '#1f3a8a', fontWeight: '600', fontSize: 13 },
 
   sectionTitle: { color: '#17336d', fontWeight: '700', marginBottom: 12, fontSize: 16, marginHorizontal: 16 },

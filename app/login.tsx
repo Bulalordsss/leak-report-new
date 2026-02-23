@@ -74,6 +74,7 @@ export default function LoginPage() {
                                 value={username}
                                 onChangeText={setUsername}
                                 placeholder="Username"
+                                placeholderTextColor="#999"
                                 style={styles.input}
                                 autoCapitalize="none"
                             />
@@ -85,6 +86,7 @@ export default function LoginPage() {
                                 value={password}
                                 onChangeText={setPassword}
                                 placeholder="Password"
+                                placeholderTextColor="#999"
                                 style={styles.input}
                                 secureTextEntry={!showPassword}
                                 textContentType="password"
@@ -169,6 +171,7 @@ const styles = StyleSheet.create({
     input: {
         flex: 1,
         fontSize: 16,
+        color: '#000', // ensure masked characters (bullets) are visible on light backgrounds
     },
     eyeButton: {
         padding: 4,

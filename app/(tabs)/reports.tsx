@@ -1,5 +1,5 @@
-import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, ScrollView, BackHandler } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, ScrollView, BackHandler, TextInput } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useFocusEffect, useNavigation } from 'expo-router';
@@ -15,6 +15,10 @@ export default function NearestMetersScreen() {
   const navigation = useNavigation();
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
   const isInitialLocation = useRef(true);
+
+  // Search state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
   
   // Zustand store
   const {
@@ -32,6 +36,7 @@ export default function NearestMetersScreen() {
     refreshLocation,
     findNearestMeters,
     recheckCustomerData,
+    searchMeter,
   } = useReportsStore();
 
   // Offline map state
@@ -44,16 +49,16 @@ export default function NearestMetersScreen() {
 
   // Initialize on mount only if not already initialized
   // The splash screen should have already initialized the store
+  // Do NOT auto-load customer data here - only initialize location
   useEffect(() => {
-    // Only initialize if data status is still loading (meaning splash didn't complete it)
     if (dataStatus === 'loading') {
       const timer = setTimeout(() => {
         initialize();
       }, 100);
-      
       return () => clearTimeout(timer);
     }
-  }, [dataStatus]);
+    // If dataStatus is already 'loaded' or 'empty', splash screen handled it - do nothing
+  }, []); // Run only once on mount, not on every dataStatus change
 
   // Recheck customer data when screen is focused (after returning from settings)
   useFocusEffect(
@@ -164,8 +169,9 @@ export default function NearestMetersScreen() {
   };
 
   const handleFindMeters = async () => {
-    // Don't start new search if already searching
+    // Strictly prevent multiple simultaneous requests
     if (isFindingMeters) {
+      console.log('[Reports] Already finding meters, ignoring tap');
       return;
     }
     
@@ -203,6 +209,27 @@ export default function NearestMetersScreen() {
     );
   };
 
+  const handleSearch = async () => {
+    if (!searchQuery.trim()) return;
+    if (dataStatus === 'empty') {
+      Alert.alert('No Data', 'Please download customer data from Settings first.');
+      return;
+    }
+    setIsSearching(true);
+    try {
+      const result = await searchMeter(searchQuery.trim());
+      if (!result.found) {
+        Alert.alert('Not Found', result.message);
+      } else {
+        // Center map on found meter
+        mapKey.current += 1;
+        setSearchQuery('');
+      }
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
   return (
     <View style={styles.page}>
       {/* Header */}
@@ -216,6 +243,42 @@ export default function NearestMetersScreen() {
           <Text style={styles.headerTitle}>{selected ? 'Report & Map' : 'Nearest Meters'}</Text>
           <Text style={styles.headerSubtitle}>{selected ? 'Search meter or pick location' : 'Tap a marker or select from list'}</Text>
         </View>
+      </View>
+
+      {/* Search Bar */}
+      <View style={styles.searchRow}>
+        <View style={styles.searchInputWrap}>
+          <Ionicons name="search-outline" size={18} color="#9ca3af" style={{ marginRight: 6 }} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search meter or account number..."
+            placeholderTextColor="#9ca3af"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            onSubmitEditing={handleSearch}
+            returnKeyType="search"
+            autoCapitalize="none"
+            autoCorrect={false}
+            editable={!isSearching}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Ionicons name="close-circle" size={18} color="#9ca3af" />
+            </TouchableOpacity>
+          )}
+        </View>
+        <TouchableOpacity
+          style={[styles.searchBtn, (isSearching || !searchQuery.trim()) && styles.searchBtnDisabled]}
+          onPress={handleSearch}
+          disabled={isSearching || !searchQuery.trim()}
+          activeOpacity={0.8}
+        >
+          {isSearching ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <Ionicons name="search" size={18} color="#fff" />
+          )}
+        </TouchableOpacity>
       </View>
 
       {/* Map - Fixed at top */}
@@ -656,5 +719,47 @@ const styles = StyleSheet.create({
     color: '#6b7280',
     textAlign: 'center',
     lineHeight: 22,
+  },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginBottom: 4,
+    gap: 8,
+  },
+  searchInputWrap: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: '#111827',
+  },
+  searchBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: '#1f3a8a',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#1f3a8a',
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 3,
+  },
+  searchBtnDisabled: {
+    opacity: 0.5,
   },
 });

@@ -115,7 +115,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     });
     
     const NOTIFICATION_ID = 'customer-data-download';
-    let lastNotificationUpdate = 0;
     
     try {
       // Show initial notification
@@ -131,10 +130,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       const result = await fetchAndSaveCustomerData((current, total) => {
         set({ downloadProgress: { current, total } });
         
-        // Update notification every 2 seconds to avoid too many updates
-        const now = Date.now();
-        if (hasPermission && now - lastNotificationUpdate > 2000) {
-          lastNotificationUpdate = now;
+        // Fire-and-forget — the notification service lock ensures only one
+        // update is in-flight at a time, so duplicate calls are safely skipped.
+        if (hasPermission) {
           const progress = Math.round((current / total) * 100);
           updateDownloadNotification(
             NOTIFICATION_ID,
@@ -151,12 +149,13 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
           customerDataStatus: 'downloaded',
         });
         
-        // Show completion notification
+        // Replace progress notification with completion notification (same ID)
         if (hasPermission) {
           await dismissNotification(NOTIFICATION_ID);
           await showDownloadCompleteNotification(
             'Download Complete',
-            `Successfully downloaded ${result.count.toLocaleString()} customer records.`
+            `Successfully downloaded ${result.count.toLocaleString()} customer records.`,
+            NOTIFICATION_ID
           );
         }
         
@@ -165,12 +164,13 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
           message: `Downloaded ${result.count.toLocaleString()} customer records.`,
         };
       } else {
-        // Show error notification
+        // Replace progress notification with error notification (same ID)
         if (hasPermission) {
           await dismissNotification(NOTIFICATION_ID);
           await showDownloadErrorNotification(
             'Download Failed',
-            result.error ?? 'Failed to download customer data.'
+            result.error ?? 'Failed to download customer data.',
+            NOTIFICATION_ID
           );
         }
         
@@ -182,12 +182,13 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     } catch (error) {
       console.error('Error downloading customer data:', error);
       
-      // Show error notification
+      // Replace progress notification with error notification
       if (hasPermission) {
         await dismissNotification(NOTIFICATION_ID);
         await showDownloadErrorNotification(
           'Download Failed',
-          'An unexpected error occurred while downloading.'
+          'An unexpected error occurred while downloading.',
+          NOTIFICATION_ID
         );
       }
       

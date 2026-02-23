@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { Meter, getNearestMetersFromCustomers } from '@/hooks/nearestMeter';
-import { loadCustomerData } from '@/utils/allCustomerData';
+import { loadCustomerData, searchCustomers } from '@/utils/allCustomerData';
 import { getCurrentLocation } from '@/hooks/getLocation';
 
 export type LatLng = { lat: number; lng: number };
@@ -33,6 +33,7 @@ interface ReportsState {
   refreshLocation: () => Promise<boolean>;
   findNearestMeters: () => Promise<void>;
   recheckCustomerData: () => Promise<void>; // Add function to recheck data
+  searchMeter: (query: string) => Promise<{ found: boolean; message: string }>; // Search by meter/account number
   
   // Computed
   getSelectedMeter: () => Meter | null;
@@ -57,15 +58,14 @@ export const useReportsStore = create<ReportsState>((set, get) => ({
   setSelectedId: (id) => set({ selectedId: id }),
   setMeters: (meters) => set({ meters }),
   
-  // Initialize app - load customer data count and get location
+  // Initialize app - only check location, do NOT load customer data to avoid freeze
   initialize: async () => {
     set({ isLoading: true });
     
-    // Use setTimeout to prevent blocking the UI thread
     await new Promise(resolve => setTimeout(resolve, 0));
     
     try {
-      // Check if customer data exists
+      // Only check if customer data exists (fast metadata check, no full load)
       const data = await loadCustomerData();
       const customerCount = data.length;
       const dataStatus: DataStatus = customerCount > 0 ? 'loaded' : 'empty';
@@ -99,7 +99,13 @@ export const useReportsStore = create<ReportsState>((set, get) => ({
   
   // Find nearest meters based on current location
   findNearestMeters: async () => {
-    const { userLocation } = get();
+    const { userLocation, isFindingMeters } = get();
+    
+    // Prevent multiple simultaneous requests
+    if (isFindingMeters) {
+      console.log('[ReportsStore] Already finding meters, ignoring duplicate request');
+      return;
+    }
     
     if (!userLocation) {
       return;
@@ -165,5 +171,54 @@ export const useReportsStore = create<ReportsState>((set, get) => ({
   getSelectedMeter: () => {
     const { meters, selectedId } = get();
     return meters.find(m => m.id === selectedId) || null;
+  },
+
+  // Search for a meter by meter number or account number and select it
+  searchMeter: async (query: string) => {
+    const trimmed = query.trim();
+    if (!trimmed) {
+      return { found: false, message: 'Please enter a meter or account number.' };
+    }
+
+    try {
+      const results = await searchCustomers(trimmed, 1);
+      if (results.length === 0) {
+        return { found: false, message: `No meter found for "${trimmed}".` };
+      }
+
+      const c = results[0];
+
+      // Build a Meter object from the customer record
+      const meter: Meter = {
+        rank: 1,
+        id: c.meterNumber,
+        title: c.name ?? c.address,
+        distance: '',
+        color: '#1f3a8a',
+        account: c.accountNumber,
+        address: c.address,
+        dma: c.dma,
+        lat: c.latitude,
+        lng: c.longitude,
+      };
+
+      // Add to meters list if not already present, then select it
+      const { meters } = get();
+      const exists = meters.some(m => m.id === meter.id);
+      if (!exists) {
+        set({ meters: [meter, ...meters] });
+      }
+
+      // Center map and select
+      set({
+        selectedId: meter.id,
+        center: { lat: meter.lat, lng: meter.lng },
+      });
+
+      return { found: true, message: '' };
+    } catch (error) {
+      console.error('[ReportsStore] searchMeter error:', error);
+      return { found: false, message: 'An error occurred while searching.' };
+    }
   },
 }));

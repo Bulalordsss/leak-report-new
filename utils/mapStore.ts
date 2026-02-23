@@ -173,7 +173,6 @@ async function downloadMap(
   // Request notification permissions
   const hasPermission = await requestNotificationPermissions();
   const NOTIFICATION_ID = 'map-download';
-  let lastNotificationUpdate = 0;
 
   try {
     console.log('Starting download from:', url);
@@ -207,10 +206,9 @@ async function downloadMap(
         const time = new Date().toLocaleTimeString();
         console.log(`[${time}] Download progress: ${progress}%`);
         
-        // Update notification every 2 seconds
-        const now = Date.now();
-        if (hasPermission && now - lastNotificationUpdate > 2000) {
-          lastNotificationUpdate = now;
+        // Fire-and-forget — the notification service lock ensures only one
+        // update is in-flight at a time, so duplicate calls are safely skipped.
+        if (hasPermission) {
           const mb = (downloadProgress.totalBytesWritten / (1024 * 1024)).toFixed(1);
           const totalMb = (downloadProgress.totalBytesExpectedToWrite / (1024 * 1024)).toFixed(1);
           updateDownloadNotification(
@@ -240,12 +238,13 @@ async function downloadMap(
     console.error('Download error:', error);
     set({ isDownloading: false });
     
-    // Show error notification
+    // Replace progress notification with error notification
     if (hasPermission) {
       await dismissNotification(NOTIFICATION_ID);
       await showDownloadErrorNotification(
         'Map Download Failed',
-        error.message || 'An error occurred during download'
+        error.message || 'An error occurred during download',
+        NOTIFICATION_ID
       );
     }
 
@@ -404,24 +403,26 @@ async function unzipMap(
     console.log('Extraction complete');
     set({ isUnzipping: false, statusMessage: 'Extraction complete' });
     
-    // Show completion notification
+    // Replace progress notification with completion notification (same ID)
     if (hasPermission) {
       await dismissNotification(NOTIFICATION_ID);
       await showDownloadCompleteNotification(
         'Map Data Extracted',
-        `${filenames.length} files extracted successfully`
+        `${filenames.length} files extracted successfully`,
+        NOTIFICATION_ID
       );
     }
   } catch (error: any) {
     console.error('Unzip error:', error);
     set({ isUnzipping: false });
     
-    // Show error notification
+    // Replace progress notification with error notification (same ID)
     if (hasPermission) {
       await dismissNotification(NOTIFICATION_ID);
       await showDownloadErrorNotification(
         'Map Extraction Failed',
-        error.message || 'An error occurred during extraction'
+        error.message || 'An error occurred during extraction',
+        NOTIFICATION_ID
       );
     }
     
