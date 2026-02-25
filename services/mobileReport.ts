@@ -16,6 +16,7 @@ export interface LeakReportPayload {
   landmarkPhotos: string[];  // Base64 encoded images or file URIs
   reportedAt: string;  // ISO date string
   empId: string;  // Employee ID of the person reporting
+  wss: number;  // Water supply system code (integer)
 }
 
 // API request body structure
@@ -237,6 +238,7 @@ export async function submitLeakReportWithFiles(payload: LeakReportPayload): Pro
       contactPerson: payload.contactPerson,
       contactNumber: payload.contactNumber,
       empId: payload.empId,
+      wss: payload.wss,
     });
     
     // Add text fields with PascalCase names
@@ -251,6 +253,8 @@ export async function submitLeakReportWithFiles(payload: LeakReportPayload): Pro
     formData.append('LeakIndicator', getLeakIndicator(payload.location).toString());  // 1=Surface, 2=Non-Surface
     formData.append('ReporterName', payload.contactPerson || '');
     formData.append('ReportedNumber', payload.contactNumber || '');
+    // WsCode is integer($int32) — only send when we have a valid value
+    formData.append('WsCode', (payload.wss ?? 0).toString());
     
     // Format DtReported as "YYYY-MM-DD HH:mm:ss.SSSSSS+TZ"
     const reportDate = new Date(payload.reportedAt);
@@ -289,6 +293,7 @@ export async function submitLeakReportWithFiles(payload: LeakReportPayload): Pro
     console.log('- LeakIndicator:', getLeakIndicator(payload.location).toString());
     console.log('- ReporterName:', payload.contactPerson || '');
     console.log('- ReportedNumber:', payload.contactNumber || '');
+    console.log('- WsCode:', payload.wss);
     console.log('- ReportedBy:', payload.empId || '');
     console.log('- DtReported:', formattedDate);
     console.log('- Id:', uuid);
@@ -343,7 +348,8 @@ export async function submitLeakReportWithFiles(payload: LeakReportPayload): Pro
       url,
       status: error?.response?.status,
       statusText: error?.response?.statusText,
-      data: error?.response?.data,
+      data: JSON.stringify(error?.response?.data),
+      headers: JSON.stringify(error?.response?.headers),
       message: error?.message,
     });
     throw error;

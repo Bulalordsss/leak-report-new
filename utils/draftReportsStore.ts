@@ -9,6 +9,7 @@ export type DraftReport = {
   accountNumber: string;
   address: string;
   dma: string;
+  wss: number;
   coordinates: string;
   leakType: 'Serviceline' | 'Mainline' | 'Others' | 'Blow-off' | 'Fire Hydrant' | 'Air Release' | 'Valve' | null;
   location: 'Surface' | 'Non-Surface' | null;

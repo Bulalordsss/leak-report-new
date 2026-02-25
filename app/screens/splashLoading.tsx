@@ -64,11 +64,11 @@ export default function SplashLoadingScreen() {
 
       setLoadingStatus('Checking authentication...');
       
-      // Restore session and check if token is valid
+      // Restore session — only checks 24h expiry, works offline
       const isValid = await restoreSession();
 
-      if (isValid && isAuthenticated) {
-        // User is authenticated, load offline data
+      if (isValid) {
+        // User has a valid 24h session, load offline data
         setLoadingStatus('Loading offline preferences...');
         
         try {
@@ -224,12 +224,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#6b7280',
     fontWeight: '500',
-  },
-  version: {
-    position: 'absolute',
-    bottom: 40,
-    fontSize: 12,
-    color: '#9ca3af',
   },
   decorationTop: {
     position: 'absolute',

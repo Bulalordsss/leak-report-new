@@ -17,6 +17,7 @@ export default function ReportScreen() {
     address?: string; 
     account?: string; 
     dma?: string; 
+    wss?: string;
     coords?: string;
     draftId?: string; // Add draftId to know if we're editing
   }>();
@@ -63,6 +64,7 @@ const leakTypeOptions = [
     account: params.account ?? '—',
     address: params.address ?? '—',
     dma: params.dma ?? '—',
+    wss: parseInt(params.wss ?? '0', 10) || 0,
     coords: params.coords ?? '—',
   }), [params]);
 
@@ -101,6 +103,7 @@ const leakTypeOptions = [
       accountNumber: selectedMeter.account,
       address: selectedMeter.address,
       dma: selectedMeter.dma,
+      wss: selectedMeter.wss,
       coordinates: selectedMeter.coords,
       leakType: leakType,
       location: location,
@@ -143,6 +146,7 @@ const leakTypeOptions = [
         accountNumber: selectedMeter.account,
         address: selectedMeter.address,
         dma: selectedMeter.dma,
+        wss: selectedMeter.wss,
         coordinates: selectedMeter.coords,
         leakType: leakType,
         location: location,

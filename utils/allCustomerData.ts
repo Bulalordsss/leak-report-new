@@ -11,6 +11,7 @@ export type Customer = {
   longitude: number;
   name?: string;
   wss?: string;
+  wssCode?: number;
   connectionClass?: string;
   status?: string;
 };
@@ -49,7 +50,8 @@ async function initDatabase(): Promise<SQLite.SQLiteDatabase> {
     const hasNewColumns = columnNames.includes('name') && 
                           columnNames.includes('wss') && 
                           columnNames.includes('connectionClass') && 
-                          columnNames.includes('status');
+                          columnNames.includes('status') &&
+                          columnNames.includes('wssCode');
     
     if (tableInfo.length > 0 && !hasNewColumns) {
       // Table exists but with old schema - drop and recreate
@@ -78,6 +80,7 @@ async function initDatabase(): Promise<SQLite.SQLiteDatabase> {
       longitude REAL,
       name TEXT,
       wss TEXT,
+      wssCode INTEGER,
       connectionClass TEXT,
       status TEXT
     );
@@ -150,7 +153,7 @@ async function _saveBatchInternal(db: SQLite.SQLiteDatabase, customers: Customer
       const batch = customers.slice(i, i + ROWS_PER_STATEMENT);
       
       // Build a bulk INSERT statement with multiple VALUES
-      const placeholders = batch.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
+      const placeholders = batch.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
       const values: (string | number)[] = [];
       
       for (const c of batch) {
@@ -163,13 +166,14 @@ async function _saveBatchInternal(db: SQLite.SQLiteDatabase, customers: Customer
           c.longitude,
           c.name || '',
           c.wss || '',
+          c.wssCode ?? 0,
           c.connectionClass || '',
           c.status || ''
         );
       }
       
       await db.runAsync(
-        `INSERT INTO customers (meterNumber, accountNumber, address, dma, latitude, longitude, name, wss, connectionClass, status) VALUES ${placeholders}`,
+        `INSERT INTO customers (meterNumber, accountNumber, address, dma, latitude, longitude, name, wss, wssCode, connectionClass, status) VALUES ${placeholders}`,
         values
       );
     }
@@ -303,7 +307,7 @@ export async function loadCustomerData(): Promise<Customer[]> {
   try {
     console.log('[loadCustomerData] Attempting to load customer data...');
     const db = await getDatabase();
-    const result = await db.getAllAsync<Customer>('SELECT meterNumber, accountNumber, address, dma, latitude, longitude, name, wss, connectionClass, status FROM customers');
+    const result = await db.getAllAsync<Customer>('SELECT meterNumber, accountNumber, address, dma, latitude, longitude, name, wss, wssCode, connectionClass, status FROM customers');
     console.log(`[loadCustomerData] Loaded ${result.length} customers from database`);
     return result.map(decryptCustomer);
   } catch (error) {
@@ -399,7 +403,7 @@ export async function searchCustomers(query: string, limit = 50): Promise<Custom
     const db = await getDatabase();
     const searchTerm = `%${query}%`;
     const result = await db.getAllAsync<Customer>(
-      `SELECT meterNumber, accountNumber, address, dma, latitude, longitude, name, wss, connectionClass, status 
+      `SELECT meterNumber, accountNumber, address, dma, latitude, longitude, name, wss, wssCode, connectionClass, status 
        FROM customers 
        WHERE meterNumber LIKE ? OR accountNumber LIKE ? OR address LIKE ?
        LIMIT ?`,

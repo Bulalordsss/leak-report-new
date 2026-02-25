@@ -228,9 +228,12 @@ export function createLeakReportPayload(params: {
   leakPhotos: string[];
   landmarkPhotos: string[];
   empId: string;
+  wss?: number;  // Water supply system code (integer)
+  reportedAt?: string; // Optional — if provided (e.g. from a draft's savedAt), use that time
 }): LeakReportPayload {
   return {
     ...params,
-    reportedAt: new Date().toISOString(),
+    wss: params.wss ?? 0,
+    reportedAt: params.reportedAt || new Date().toISOString(),
   };
 }

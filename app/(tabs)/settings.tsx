@@ -373,7 +373,7 @@ export default function SettingsScreen() {
             <Text style={styles.sheetTitle}>General Settings</Text>
           </View>
           <View style={{ marginTop: 8 }}>
-            <Row label="App Version" value="1.3" />
+            <Row label="App Version" value="1.4" />
           </View>
         </View>
 

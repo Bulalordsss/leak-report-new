@@ -54,6 +54,7 @@ export default function DraftReportsScreen() {
                 accountNumber: draft.accountNumber,
                 address: draft.address,
                 dma: draft.dma,
+                wss: draft.wss ?? 0,
                 coordinates: draft.coordinates,
                 leakType: draft.leakType,
                 location: draft.location,
@@ -63,6 +64,7 @@ export default function DraftReportsScreen() {
                 leakPhotos: draft.leakPhotos,
                 landmarkPhotos: draft.landmarkPhotos,
                 empId: draft.empId,
+                reportedAt: draft.savedAt, // Use the time the draft was saved, not now
               });
 
               const result = await submitReport(payload);
@@ -102,6 +104,7 @@ export default function DraftReportsScreen() {
         address: draft.address,
         account: draft.accountNumber,
         dma: draft.dma,
+        wss: draft.wss ?? 0,
         coords: draft.coordinates,
         draftId: draft.id, // Pass the draft ID so form knows it's an edit
       }

@@ -17,15 +17,36 @@ const NOTIFICATION_ICON = 'ic_notification';
 const NOTIFICATION_COLOR = '#1a73e8';
 
 // Configure notification behavior
+if (isNotificationsAvailable) {
+  // Suppress all foreground notification alerts/sounds/badges
+  // Progress notifications should only appear silently in the notification shade
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: false,
+      shouldPlaySound: false,
+      shouldSetBadge: false,
+      shouldShowBanner: false,
+      shouldShowList: false,
+    }),
+  });
+}
+
 if (Platform.OS === 'android' && isNotificationsAvailable) {
-  Notifications.setNotificationChannelAsync('downloads', {
-    name: 'Downloads',
-    importance: Notifications.AndroidImportance.LOW, // LOW = no sound/vibration on updates
-    vibrationPattern: [0],
-    lightColor: NOTIFICATION_COLOR,
+  // Use 'downloads-silent' channel — Android does not allow lowering importance on
+  // an existing channel, so we create a new one to guarantee silent behaviour.
+  Notifications.setNotificationChannelAsync('downloads-silent', {
+    name: 'Download Progress',
+    description: 'Silent progress notifications for downloads and extractions',
+    importance: Notifications.AndroidImportance.MIN, // MIN = silent, no pop-up, no sound, no vibration
+    sound: null,
+    vibrationPattern: null,
     enableVibrate: false,
+    enableLights: false,
     showBadge: false,
   });
+
+  // Delete old noisy channel if it exists
+  Notifications.deleteNotificationChannelAsync('downloads').catch(() => {});
 }
 
 /**
@@ -56,14 +77,15 @@ async function postNotification(
       content: {
         title,
         body,
+        sound: false, // No sound on any progress notification
         data: options.progress !== undefined ? { progress: options.progress } : {},
         ...(Platform.OS === 'android' && {
-          priority: Notifications.AndroidNotificationPriority.DEFAULT,
-          channelId: 'downloads',
+          priority: Notifications.AndroidNotificationPriority.LOW,
+          channelId: 'downloads-silent',
           sticky: options.sticky ?? false,
           color: NOTIFICATION_COLOR,
           smallIcon: NOTIFICATION_ICON,
-          // Hide the timestamp so it doesn't look like a new notification on each update
+          vibrate: [0], // No vibration
           showTimestamp: false,
         }),
       },

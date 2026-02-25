@@ -361,14 +361,6 @@ export default function NearestMetersScreen() {
               </View>
             </View>
 
-            <View style={styles.detailRow}>
-              <View style={styles.detailIcon}><Ionicons name="water-outline" size={18} color="#1f3a8a" /></View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.detailLabel}>DMA (District Metered Area)</Text>
-                <Text style={styles.detailValue}>{selected.dma}</Text>
-              </View>
-            </View>
-
             {/* Report Meter button */}
             <TouchableOpacity
               style={styles.reportBtn}
@@ -380,6 +372,7 @@ export default function NearestMetersScreen() {
                   address: selected.address,
                   account: selected.account,
                   dma: selected.dma,
+                  wss: selected.wss,
                   coords: `${selected.lat.toFixed(6)}, ${selected.lng.toFixed(6)}`
                 }
               })}

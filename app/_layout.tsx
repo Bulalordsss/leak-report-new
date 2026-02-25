@@ -9,13 +9,15 @@ try {
   Notifications = require('expo-notifications');
   
   // Configure notification handler only if available
+  // All foreground alerts/banners/sounds are suppressed — progress notifications
+  // should only appear silently in the notification shade, not as pop-ups.
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
-      shouldShowAlert: true,
+      shouldShowAlert: false,
       shouldPlaySound: false,
       shouldSetBadge: false,
-      shouldShowBanner: true,
-      shouldShowList: true,
+      shouldShowBanner: false,
+      shouldShowList: false,
     }),
   });
 } catch (error) {

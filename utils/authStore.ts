@@ -7,7 +7,7 @@ const USER_KEY = "auth_user";
 const SESSION_EXPIRY_KEY = "session_expiry";
 const SESSION_DURATION_MS = 24 * 60 * 60 * 1000; // 24 hours
 
-interface AuthState {
+interface AuthState { 
   user: BackendUser | null;
   token: string | null;
   isAuthenticated: boolean;
@@ -78,17 +78,19 @@ export const useAuthStore = create<AuthState>((set) => ({
         AsyncStorage.getItem(SESSION_EXPIRY_KEY),
       ]);
 
-      if (!token || !userJson) {
-        console.log("[auth] no stored session found");
+      // Only require user data — don't validate the token itself.
+      // This allows offline mode to work as long as the 24h session hasn't expired.
+      if (!userJson) {
+        console.log("[auth] no stored session found (missing user data)");
         return false;
       }
 
-      // Check if session has expired
+      // Check if 24h session has expired
       if (expiryStr) {
         const expiryTime = parseInt(expiryStr, 10);
         const now = Date.now();
         if (now > expiryTime) {
-          console.log("[auth] session expired, clearing storage");
+          console.log("[auth] 24h session expired, clearing storage — re-login required");
           await AsyncStorage.multiRemove(["access_token", USER_KEY, SESSION_EXPIRY_KEY]);
           return false;
         }
@@ -105,7 +107,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       console.log("[auth] session restored for", user.empId);
       set({
         user,
-        token,
+        token: token || 'offline-session', // Use placeholder if token is missing (offline)
         isAuthenticated: true,
       });
       return true;

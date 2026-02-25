@@ -38,6 +38,7 @@ function mapApiCustomerToLocal(apiCustomer: CustomerApiItem): Customer {
     longitude: apiCustomer.longitude || 0,
     name: encryptName(apiCustomer.name || ''),
     wss: apiCustomer.wss || '',
+    wssCode: apiCustomer.wssCode ?? 0,
     connectionClass: apiCustomer.connectionClass || '',
     status: apiCustomer.status || '',
   };

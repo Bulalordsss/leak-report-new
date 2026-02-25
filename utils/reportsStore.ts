@@ -198,6 +198,7 @@ export const useReportsStore = create<ReportsState>((set, get) => ({
         account: c.accountNumber,
         address: c.address,
         dma: c.dma,
+        wss: c.wssCode ?? 0,
         lat: c.latitude,
         lng: c.longitude,
       };

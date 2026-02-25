@@ -11,6 +11,7 @@ export interface CustomerApiItem {
   meterNumber: string;
   connectionClass: string;
   status: string;
+  wssCode: number;
   geometry: string;
   latitude: number;
   longitude: number;

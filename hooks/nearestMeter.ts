@@ -11,6 +11,7 @@ export type Meter = {
   account: string;
   address: string;
   dma: string;
+  wss: number;
   lat: number;
   lng: number;
 };
@@ -125,6 +126,7 @@ export function getNearestMetersFromCustomers(
       account: item.customer.accountNumber,
       address: item.customer.address,
       dma: item.customer.dma,
+      wss: item.customer.wssCode ?? 0,
       lat: item.customer.latitude,
       lng: item.customer.longitude,
     };
